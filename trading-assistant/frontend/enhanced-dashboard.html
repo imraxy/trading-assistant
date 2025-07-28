@@ -1,0 +1,683 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Trading Assistant - Enhanced Dashboard</title>
+    <script src="https://unpkg.com/alpinejs@3.x.x/dist/cdn.min.js" defer></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        .risk-critical { @apply bg-red-100 border-red-500 text-red-800; }
+        .risk-high { @apply bg-orange-100 border-orange-500 text-orange-800; }
+        .risk-medium { @apply bg-yellow-100 border-yellow-500 text-yellow-800; }
+        .risk-low { @apply bg-green-100 border-green-500 text-green-800; }
+        .trend-bullish { @apply text-green-600; }
+        .trend-bearish { @apply text-red-600; }
+        .trend-sideways { @apply text-gray-600; }
+        .pnl-positive { @apply text-green-600 font-semibold; }
+        .pnl-negative { @apply text-red-600 font-semibold; }
+        .loading-spinner {
+            border: 2px solid #f3f3f3;
+            border-top: 2px solid #3498db;
+            border-radius: 50%;
+            width: 20px;
+            height: 20px;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body class="bg-gray-100 min-h-screen" x-data="tradingDashboard()">
+    <!-- Header -->
+    <header class="bg-white shadow-sm border-b">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex justify-between items-center py-4">
+                <div class="flex items-center space-x-3">
+                    <div class="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center">
+                        <span class="text-white font-bold text-sm">📊</span>
+                    </div>
+                    <div>
+                        <h1 class="text-xl font-bold text-gray-900">AI Trading Assistant</h1>
+                        <p class="text-sm text-gray-500">Enhanced Position Analysis</p>
+                    </div>
+                </div>
+                
+                <div class="flex items-center space-x-4">
+                    <div class="flex items-center space-x-2">
+                        <div :class="connectionStatus === 'connected' ? 'w-2 h-2 bg-green-500 rounded-full' : 'w-2 h-2 bg-red-500 rounded-full'"></div>
+                        <span class="text-sm text-gray-600" x-text="connectionStatus === 'connected' ? 'Connected' : 'Disconnected'"></span>
+                    </div>
+                    
+                    <div class="flex items-center space-x-4">
+                        <div class="flex items-center space-x-2">
+                            <label class="text-sm font-medium text-gray-700">Analysis Mode:</label>
+                            <select x-model="analysisMode" class="rounded border-gray-300 text-sm">
+                                <option value="progressive">⚡ Progressive (Shows results as they load)</option>
+                                <option value="basic">🚀 Basic (Fastest)</option>
+                                <option value="multi-source">📊 Multi-Source (Advanced)</option>
+                                <option value="bybit-trend">⚠️ Bybit Trend (Rate Limited)</option>
+                            </select>
+                        </div>
+                        
+                        <div x-show="analysisMode === 'multi-source'" class="flex items-center space-x-2">
+                            <label class="flex items-center space-x-1 text-xs">
+                                <input type="checkbox" x-model="enableTechnicalAnalysis" class="rounded">
+                                <span>Technical</span>
+                            </label>
+                            <label class="flex items-center space-x-1 text-xs">
+                                <input type="checkbox" x-model="enableSentimentAnalysis" class="rounded">
+                                <span>Sentiment</span>
+                            </label>
+                        </div>
+                        
+                        <button @click="refreshPositions()" 
+                                :disabled="loading"
+                                class="bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white px-4 py-2 rounded-lg text-sm font-medium flex items-center space-x-2">
+                            <div x-show="loading" class="loading-spinner"></div>
+                            <span>🔄 Refresh</span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- Summary Cards -->
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+            <!-- Total Positions -->
+            <div class="bg-white rounded-lg shadow p-6">
+                <div class="flex items-center">
+                    <div class="flex-shrink-0">
+                        <div class="w-8 h-8 bg-blue-500 rounded-lg flex items-center justify-center">
+                            <span class="text-white text-sm">📈</span>
+                        </div>
+                    </div>
+                    <div class="ml-4">
+                        <p class="text-sm font-medium text-gray-500">Active Positions</p>
+                        <p class="text-2xl font-bold text-gray-900" x-text="summary.total_positions || 0"></p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Total P&L -->
+            <div class="bg-white rounded-lg shadow p-6">
+                <div class="flex items-center">
+                    <div class="flex-shrink-0">
+                        <div class="w-8 h-8 bg-green-500 rounded-lg flex items-center justify-center">
+                            <span class="text-white text-sm">💰</span>
+                        </div>
+                    </div>
+                    <div class="ml-4">
+                        <p class="text-sm font-medium text-gray-500">Total P&L</p>
+                        <p class="text-2xl font-bold" 
+                           :class="(summary.total_pnl || 0) >= 0 ? 'text-green-600' : 'text-red-600'"
+                           x-text="'$' + (summary.total_pnl || 0).toFixed(2)"></p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Average Leverage -->
+            <div class="bg-white rounded-lg shadow p-6">
+                <div class="flex items-center">
+                    <div class="flex-shrink-0">
+                        <div class="w-8 h-8 bg-orange-500 rounded-lg flex items-center justify-center">
+                            <span class="text-white text-sm">⚡</span>
+                        </div>
+                    </div>
+                    <div class="ml-4">
+                        <p class="text-sm font-medium text-gray-500">Avg Leverage</p>
+                        <p class="text-2xl font-bold text-gray-900" x-text="(summary.avg_leverage || 0).toFixed(1) + 'x'"></p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Risk Distribution -->
+            <div class="bg-white rounded-lg shadow p-6">
+                <div class="flex items-center justify-between">
+                    <div class="flex-shrink-0">
+                        <div class="w-8 h-8 bg-red-500 rounded-lg flex items-center justify-center">
+                            <span class="text-white text-sm">⚠️</span>
+                        </div>
+                    </div>
+                    <div class="text-right">
+                        <p class="text-sm font-medium text-gray-500">Risk Status</p>
+                        <div class="flex space-x-1 mt-1">
+                            <template x-for="(count, risk) in summary.risk_distribution" :key="risk">
+                                <span class="text-xs px-2 py-1 rounded" 
+                                      :class="getRiskClass(risk)"
+                                      x-text="count"></span>
+                            </template>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Filters and Controls -->
+        <div class="bg-white rounded-lg shadow mb-6">
+            <div class="px-6 py-4 border-b border-gray-200">
+                <h3 class="text-lg font-medium text-gray-900">Filters & Sorting</h3>
+            </div>
+            <div class="p-6">
+                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                    <!-- Risk Filter -->
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-2">Risk Level</label>
+                        <select x-model="filters.risk" @change="applyFilters()" 
+                                class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500">
+                            <option value="">All Risk Levels</option>
+                            <option value="CRITICAL">🚨 Critical</option>
+                            <option value="HIGH">⚠️ High</option>
+                            <option value="MEDIUM">⚡ Medium</option>
+                            <option value="LOW">✅ Low</option>
+                        </select>
+                    </div>
+
+                    <!-- Side Filter -->
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-2">Position Side</label>
+                        <select x-model="filters.side" @change="applyFilters()" 
+                                class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500">
+                            <option value="">Both Long & Short</option>
+                            <option value="Buy">📈 Long Only</option>
+                            <option value="Sell">📉 Short Only</option>
+                        </select>
+                    </div>
+
+                    <!-- Symbol Search -->
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-2">Symbol Search</label>
+                        <input type="text" x-model="filters.symbol" @input="applyFilters()"
+                               placeholder="e.g., BTC, ETH..."
+                               class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500">
+                    </div>
+
+                    <!-- Sort Options -->
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-2">Sort By</label>
+                        <select x-model="sortBy" @change="applyFilters()" 
+                                class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500">
+                            <option value="pnl_percentage">P&L %</option>
+                            <option value="pnl_amount">P&L Amount</option>
+                            <option value="risk_score">Risk Score</option>
+                            <option value="leverage">Leverage</option>
+                            <option value="position_value">Position Value</option>
+                            <option value="urgency">Urgency</option>
+                            <option value="symbol">Symbol</option>
+                        </select>
+                    </div>
+                </div>
+
+                <!-- Advanced Filters Row -->
+                <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mt-4">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-2">Min P&L %</label>
+                        <input type="number" x-model="filters.min_pnl" @input="applyFilters()"
+                               placeholder="-50" step="0.1"
+                               class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-2">Max P&L %</label>
+                        <input type="number" x-model="filters.max_pnl" @input="applyFilters()"
+                               placeholder="100" step="0.1"
+                               class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-2">Min Leverage</label>
+                        <input type="number" x-model="filters.min_leverage" @input="applyFilters()"
+                               placeholder="1" min="1" max="100"
+                               class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-2">Max Leverage</label>
+                        <input type="number" x-model="filters.max_leverage" @input="applyFilters()"
+                               placeholder="50" min="1" max="100"
+                               class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500">
+                    </div>
+                </div>
+
+                <div class="flex justify-between items-center mt-4">
+                    <button @click="clearFilters()" 
+                            class="text-sm text-gray-600 hover:text-gray-800">
+                        Clear All Filters
+                    </button>
+                    <span class="text-sm text-gray-600" x-text="`Showing ${filteredPositions} of ${totalPositions} positions`"></span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Positions List -->
+        <div class="bg-white rounded-lg shadow">
+            <div class="px-6 py-4 border-b border-gray-200">
+                <h3 class="text-lg font-medium text-gray-900">Position Analysis</h3>
+            </div>
+            
+            <div x-show="loading" class="p-8 text-center">
+                <div class="loading-spinner mx-auto mb-4"></div>
+                <p class="text-gray-600">
+                    <span x-show="analysisMode === 'progressive'">Loading positions progressively...</span>
+                    <span x-show="analysisMode !== 'progressive'">Analyzing positions...</span>
+                </p>
+                <div class="text-sm text-gray-500 mt-2">
+                    <div x-show="analysisMode === 'progressive'">
+                        ⚡ <strong>Progressive mode:</strong> Results appear as they're analyzed. 
+                        <span x-show="positions.length > 0" x-text="`Showing ${positions.length} positions so far...`"></span>
+                    </div>
+                    <div x-show="analysisMode === 'multi-source'">
+                        🚀 Using Multi-Source Analysis:
+                        <span x-show="enableTechnicalAnalysis">📊 Technical Indicators</span>
+                        <span x-show="enableSentimentAnalysis">📰 News Sentiment</span>
+                        💰 Price Data
+                    </div>
+                    <div x-show="analysisMode === 'bybit-trend'">
+                        ⚠️ Using Bybit trend analysis (rate-limited). This may be slower.
+                    </div>
+                    <div x-show="analysisMode === 'basic'">
+                        ⚡ Using basic analysis (fastest mode)
+                    </div>
+                </div>
+            </div>
+
+            <div x-show="!loading && positions.length === 0" class="p-8 text-center">
+                <p class="text-gray-600">Click "🔄 Refresh" to load your positions.</p>
+                <div class="text-sm text-gray-500 mt-2">
+                    <div x-show="analysisMode === 'progressive'">
+                        ⚡ <strong>Progressive mode</strong> shows results as they load - perfect for seeing your positions immediately!
+                    </div>
+                    <div x-show="analysisMode === 'basic'">
+                        🚀 <strong>Basic mode</strong> provides fastest results with essential position info only
+                    </div>
+                    <div x-show="analysisMode === 'multi-source'">
+                        📊 <strong>Multi-Source mode</strong> provides the most comprehensive analysis using multiple free APIs
+                    </div>
+                    <div x-show="analysisMode === 'bybit-trend'">
+                        ⚠️ <strong>Bybit Trend mode</strong> is rate-limited and may be slow
+                    </div>
+                </div>
+            </div>
+
+            <div x-show="!loading && positions.length > 0" class="divide-y divide-gray-200">
+                <template x-for="position in positions" :key="position.symbol">
+                    <div class="p-6 hover:bg-gray-50">
+                        <!-- Position Header -->
+                        <div class="flex items-center justify-between mb-4">
+                            <div class="flex items-center space-x-3">
+                                <h4 class="text-lg font-semibold text-gray-900" x-text="position.symbol"></h4>
+                                <span class="text-sm px-2 py-1 rounded-full bg-gray-100" 
+                                      :class="position.side === 'Buy' ? 'text-green-700 bg-green-100' : 'text-red-700 bg-red-100'"
+                                      x-text="position.side === 'Buy' ? '📈 LONG' : '📉 SHORT'"></span>
+                                <span class="text-xs px-2 py-1 rounded border"
+                                      :class="getRiskClass(position.risk_level)"
+                                      x-text="position.risk_level"></span>
+                            </div>
+                            
+                            <div class="text-right">
+                                <div class="text-2xl font-bold"
+                                     :class="position.pnl_percentage >= 0 ? 'text-green-600' : 'text-red-600'"
+                                     x-text="(position.pnl_percentage >= 0 ? '+' : '') + position.pnl_percentage + '%'"></div>
+                                <div class="text-sm text-gray-600" x-text="'$' + position.pnl_amount.toFixed(2)"></div>
+                            </div>
+                        </div>
+
+                        <!-- Position Details Grid -->
+                        <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
+                            <div>
+                                <p class="text-xs text-gray-500">Size</p>
+                                <p class="font-medium" x-text="position.size.toFixed(4)"></p>
+                            </div>
+                            <div>
+                                <p class="text-xs text-gray-500">Entry Price</p>
+                                <p class="font-medium" x-text="'$' + position.entry_price.toFixed(6)"></p>
+                            </div>
+                            <div>
+                                <p class="text-xs text-gray-500">Current Price</p>
+                                <p class="font-medium" x-text="'$' + position.current_price.toFixed(6)"></p>
+                            </div>
+                            <div>
+                                <p class="text-xs text-gray-500">Leverage</p>
+                                <p class="font-medium" x-text="position.leverage + 'x'"></p>
+                            </div>
+                        </div>
+
+                        <!-- Recommendation -->
+                        <div class="bg-gray-50 rounded-lg p-4 mb-4">
+                            <div class="flex items-center justify-between">
+                                <div class="flex items-center space-x-3">
+                                    <span class="text-2xl" x-text="getActionEmoji(position.recommendation.action)"></span>
+                                    <div>
+                                        <p class="font-semibold text-gray-900" x-text="position.recommendation.action"></p>
+                                        <p class="text-sm text-gray-600" x-text="position.recommendation.reason"></p>
+                                    </div>
+                                </div>
+                                <div class="text-right">
+                                    <span class="text-xs px-2 py-1 rounded-full"
+                                          :class="getUrgencyClass(position.recommendation.urgency)"
+                                          x-text="position.recommendation.urgency.toUpperCase()"></span>
+                                    <p class="text-xs text-gray-500 mt-1" x-text="'Confidence: ' + position.recommendation.confidence + '%'"></p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Trend Analysis -->
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                                <h5 class="text-sm font-medium text-gray-700 mb-2">Trend Analysis</h5>
+                                <div class="space-y-2">
+                                    <div class="flex justify-between">
+                                        <span class="text-sm text-gray-600">Direction:</span>
+                                        <span class="text-sm font-medium"
+                                              :class="getTrendClass(position.trend.direction)"
+                                              x-text="position.trend.direction.toUpperCase()"></span>
+                                    </div>
+                                    <div class="flex justify-between">
+                                        <span class="text-sm text-gray-600">Strength:</span>
+                                        <span class="text-sm font-medium" x-text="position.trend.strength"></span>
+                                    </div>
+                                    <div class="flex justify-between">
+                                        <span class="text-sm text-gray-600">Confidence:</span>
+                                        <span class="text-sm font-medium" x-text="position.trend.confidence + '%'"></span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div>
+                                <h5 class="text-sm font-medium text-gray-700 mb-2">Key Levels</h5>
+                                <div class="space-y-2">
+                                    <div class="flex justify-between">
+                                        <span class="text-sm text-gray-600">Stop Loss:</span>
+                                        <span class="text-sm font-medium text-red-600" x-text="'$' + position.key_levels.stop_loss"></span>
+                                    </div>
+                                    <div class="flex justify-between">
+                                        <span class="text-sm text-gray-600">Take Profit 1:</span>
+                                        <span class="text-sm font-medium text-green-600" x-text="'$' + position.key_levels.take_profit_1"></span>
+                                    </div>
+                                    <div class="flex justify-between">
+                                        <span class="text-sm text-gray-600">Take Profit 2:</span>
+                                        <span class="text-sm font-medium text-green-600" x-text="'$' + position.key_levels.take_profit_2"></span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </template>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function tradingDashboard() {
+            return {
+                // State
+                connectionStatus: 'disconnected',
+                loading: false,
+                positions: [],
+                totalPositions: 0,
+                filteredPositions: 0,
+                summary: {},
+                
+                // Filters
+                filters: {
+                    risk: '',
+                    side: '',
+                    symbol: '',
+                    min_pnl: '',
+                    max_pnl: '',
+                    min_leverage: '',
+                    max_leverage: ''
+                },
+                sortBy: 'pnl_percentage',
+                sortOrder: 'desc',
+                
+                // Analysis modes
+                analysisMode: 'progressive', // Default to progressive analysis for better UX
+                enableTechnicalAnalysis: true,
+                enableSentimentAnalysis: true,
+                enableTrendAnalysis: false, // Legacy option
+                
+                // Progressive loading
+                progressiveTaskId: null,
+                progressivePolling: false,
+
+                // Initialize
+                async init() {
+                    this.checkConnection();
+                    // Don't auto-load positions - let user choose settings first
+                    
+                    // Auto-refresh every 30 seconds (only if data has been loaded)
+                    setInterval(() => {
+                        if (!this.loading && this.positions.length > 0) {
+                            this.refreshPositions();
+                        }
+                    }, 30000);
+                },
+
+                // Connection check
+                async checkConnection() {
+                    try {
+                        const response = await fetch('/health');
+                        this.connectionStatus = response.ok ? 'connected' : 'disconnected';
+                    } catch (error) {
+                        this.connectionStatus = 'disconnected';
+                    }
+                },
+
+                // Refresh positions
+                async refreshPositions() {
+                    if (this.analysisMode === 'progressive') {
+                        await this.startProgressiveAnalysis();
+                    } else {
+                        await this.regularAnalysis();
+                    }
+                },
+
+                async startProgressiveAnalysis() {
+                    this.loading = true;
+                    this.positions = []; // Clear existing positions
+                    
+                    try {
+                        // Start progressive analysis
+                        const response = await fetch('/api/v1/positions/progressive');
+                        const data = await response.json();
+                        
+                        if (data.status === 'success') {
+                            this.progressiveTaskId = data.task_id;
+                            this.progressivePolling = true;
+                            
+                            // Start polling for updates
+                            this.pollProgressiveResults();
+                        } else {
+                            console.error('Failed to start progressive analysis:', data.message);
+                            this.loading = false;
+                        }
+                    } catch (error) {
+                        console.error('Error starting progressive analysis:', error);
+                        this.loading = false;
+                    }
+                },
+
+                async pollProgressiveResults() {
+                    if (!this.progressivePolling || !this.progressiveTaskId) return;
+                    
+                    try {
+                        const response = await fetch(`/api/v1/positions/progressive?task_id=${this.progressiveTaskId}`);
+                        const data = await response.json();
+                        
+                        if (data.status === 'success') {
+                            const progress = data.progress;
+                            
+                            // Update positions with partial results
+                            if (data.partial_results && data.partial_results.length > 0) {
+                                this.positions = data.partial_results;
+                                this.totalPositions = data.partial_results.length;
+                                this.filteredPositions = data.partial_results.length;
+                                
+                                // Apply filters to current results
+                                this.applyFiltersToCurrentResults();
+                            }
+                            
+                            // Check if completed
+                            if (progress.status === 'completed') {
+                                if (data.final_results && data.final_results.length > 0) {
+                                    this.positions = data.final_results;
+                                    this.totalPositions = data.final_results.length;
+                                    this.filteredPositions = data.final_results.length;
+                                    this.applyFiltersToCurrentResults();
+                                }
+                                this.progressivePolling = false;
+                                this.loading = false;
+                            } else if (progress.status === 'error') {
+                                console.error('Progressive analysis failed:', progress.error);
+                                this.progressivePolling = false;
+                                this.loading = false;
+                            } else {
+                                // Continue polling
+                                setTimeout(() => this.pollProgressiveResults(), 1000);
+                            }
+                        }
+                    } catch (error) {
+                        console.error('Error polling progressive results:', error);
+                        this.progressivePolling = false;
+                        this.loading = false;
+                    }
+                },
+
+                async regularAnalysis() {
+                    this.loading = true;
+                    try {
+                        await this.checkConnection();
+                        
+                        const params = new URLSearchParams({
+                            sort_by: this.sortBy,
+                            sort_order: this.sortOrder
+                        });
+
+                        // Add analysis mode specific parameters
+                        if (this.analysisMode === 'multi-source') {
+                            params.append('enable_technical_analysis', this.enableTechnicalAnalysis);
+                            params.append('enable_sentiment_analysis', this.enableSentimentAnalysis);
+                        } else if (this.analysisMode === 'bybit-trend') {
+                            params.append('enable_trend_analysis', true);
+                        } else {
+                            // Basic mode - no additional analysis
+                            params.append('enable_trend_analysis', false);
+                        }
+
+                        // Add filters
+                        Object.entries(this.filters).forEach(([key, value]) => {
+                            if (value !== '' && value !== null && value !== undefined) {
+                                params.append(`filter_${key}`, value);
+                            }
+                        });
+
+                        // Choose endpoint based on analysis mode
+                        let endpoint;
+                        if (this.analysisMode === 'multi-source') {
+                            endpoint = `/api/v1/positions/multi-source?${params}`;
+                        } else {
+                            endpoint = `/api/v1/positions/enhanced?${params}`;
+                        }
+
+                        const response = await fetch(endpoint);
+                        const data = await response.json();
+                        
+                        if (data.status === 'success') {
+                            this.positions = data.positions || [];
+                            this.totalPositions = data.total_positions || 0;
+                            this.filteredPositions = data.filtered_positions || 0;
+                            this.summary = data.summary || {};
+                        } else {
+                            console.error('Failed to fetch positions:', data.error);
+                        }
+                    } catch (error) {
+                        console.error('Error fetching positions:', error);
+                    } finally {
+                        this.loading = false;
+                    }
+                },
+
+                applyFiltersToCurrentResults() {
+                    // Apply current filters to the loaded positions
+                    let filtered = this.positions;
+
+                    if (this.filters.risk) {
+                        filtered = filtered.filter(p => p.risk_level === this.filters.risk);
+                    }
+                    if (this.filters.side) {
+                        filtered = filtered.filter(p => p.side.toLowerCase() === this.filters.side.toLowerCase());
+                    }
+                    if (this.filters.symbol) {
+                        filtered = filtered.filter(p => p.symbol.includes(this.filters.symbol.toUpperCase()));
+                    }
+                    
+                    this.filteredPositions = filtered.length;
+                },
+
+                // Apply filters
+                async applyFilters() {
+                    await this.refreshPositions();
+                },
+
+                // Clear filters
+                clearFilters() {
+                    this.filters = {
+                        risk: '',
+                        side: '',
+                        symbol: '',
+                        min_pnl: '',
+                        max_pnl: '',
+                        min_leverage: '',
+                        max_leverage: ''
+                    };
+                    this.applyFilters();
+                },
+
+                // Helper functions
+                getRiskClass(risk) {
+                    const riskClasses = {
+                        'CRITICAL': 'risk-critical',
+                        'HIGH': 'risk-high',
+                        'MEDIUM': 'risk-medium',
+                        'LOW': 'risk-low'
+                    };
+                    return riskClasses[risk] || 'bg-gray-100 border-gray-300 text-gray-600';
+                },
+
+                getTrendClass(direction) {
+                    const trendClasses = {
+                        'bullish': 'trend-bullish',
+                        'bearish': 'trend-bearish',
+                        'sideways': 'trend-sideways'
+                    };
+                    return trendClasses[direction] || 'text-gray-600';
+                },
+
+                getUrgencyClass(urgency) {
+                    const urgencyClasses = {
+                        'immediate': 'bg-red-100 text-red-800',
+                        'high': 'bg-orange-100 text-orange-800',
+                        'medium': 'bg-yellow-100 text-yellow-800',
+                        'low': 'bg-blue-100 text-blue-800',
+                        'none': 'bg-gray-100 text-gray-600'
+                    };
+                    return urgencyClasses[urgency] || 'bg-gray-100 text-gray-600';
+                },
+
+                getActionEmoji(action) {
+                    if (action.includes('EMERGENCY')) return '🚨';
+                    if (action.includes('CLOSE')) return '❌';
+                    if (action.includes('PROFIT')) return '💰';
+                    if (action.includes('REDUCE')) return '⚠️';
+                    if (action.includes('HOLD')) return '✅';
+                    if (action.includes('ADD')) return '🔄';
+                    if (action.includes('MONITOR')) return '👀';
+                    return '📊';
+                }
+            }
+        }
+    </script>
+</body>
+</html> 

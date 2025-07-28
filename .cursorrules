@@ -1,0 +1,177 @@
+# AI Trading Assistant - Project Intelligence
+
+## Project Overview
+Real-time AI-powered trading assistant integrating Bybit, 3Commas, TradingView, and sentiment analysis for 193+ position monitoring with actionable recommendations.
+
+## Key Development Patterns
+
+### Architecture Principles
+- **Microservices approach**: Separate API aggregator, analysis engine, and notification services
+- **Security-first**: Read-only API permissions, encrypted credentials, no persistent API key storage
+- **Performance-oriented**: Sub-5 second analysis latency, real-time WebSocket connections
+- **Modular design**: Independent analysis layers (Technical, Sentiment, Fundamental, AI Decision)
+
+### Code Organization
+```
+trading-assistant/
+├── backend/
+│   ├── api-aggregator/     # Node.js - API collection hub
+│   ├── analysis-engine/    # Python - TA, sentiment, AI analysis
+│   └── notification-service/ # Alert management
+├── frontend/               # React/Next.js dashboard
+├── shared/                 # Common utilities and types
+└── memory-bank/           # Project documentation
+```
+
+### Technology Decisions
+- **Python FastAPI** for analysis engine (async performance)
+- **TA-Lib** for technical indicators (industry standard)
+- **OpenAI GPT-4** with function calling for decision synthesis
+- **PostgreSQL** for structured data, Redis for caching
+- **WebSocket** for real-time updates (<5s latency requirement)
+
+## Development Workflow
+
+### Weekly Sprint Structure
+- Week 1: Bybit API + Basic TA
+- Week 2: Advanced indicators + Risk assessment
+- Week 3: Sentiment analysis layer
+- Week 4: AI decision engine
+- Week 5: Notification system
+- Week 6: Dashboard + Polish
+
+### Quality Gates
+- All API integrations must include error handling and rate limiting
+- Technical indicators must be validated against known values
+- Security: Never commit API keys, use environment variables
+- Performance: Profile analysis pipeline for <5s total latency
+
+## API Integration Patterns
+
+### Bybit API Strategy
+- REST for account/position data
+- WebSocket for real-time price feeds
+- Rate limiting: Batch requests where possible
+- Error handling: Exponential backoff, circuit breaker pattern
+
+### Data Flow
+```
+Bybit API → Position Cache → Analysis Pipeline → AI Decision → User Alert
+```
+
+## Analysis Engine Patterns
+
+### Technical Analysis
+- Use TA-Lib for calculations (RSI, MACD, EMA, Bollinger Bands)
+- Multi-timeframe analysis (1m, 5m, 1h, 4h, 1d)
+- Normalize all indicators to consistent scales
+
+### AI Decision Logic
+- Combine Technical + Sentiment + Fundamental layers
+- GPT-4 function calling for structured decision output
+- Include reasoning explanation for each recommendation
+- Output format: Hold/Exit/Add/Watch with confidence scores
+
+## Security Patterns
+
+### API Key Management
+- Environment variables for development
+- Encrypted storage for production
+- Read-only permissions only
+- Token rotation capability
+
+### Data Protection
+- HTTPS/WSS only
+- Input validation on all endpoints
+- Rate limiting on external APIs
+- No sensitive data in logs
+
+## Performance Optimization
+
+### Real-time Requirements
+- WebSocket connection pooling
+- Redis caching for frequently accessed data
+- Database indexing on symbol, timestamp
+- Efficient data structures for 193+ positions
+
+### Monitoring
+- Application performance metrics
+- API response time tracking
+- Error rate monitoring
+- Resource usage alerting
+
+## User Experience Patterns
+
+### Decision Output Format
+```
+| Symbol | PnL | RSI | MACD | Sentiment | Risk | Suggestion | Reason |
+|--------|-----|-----|------|-----------|------|-------------|--------|
+| BTCUSDT | +12% | 54 | Bullish | Neutral | Low | ✅ Hold | Trend aligned |
+```
+
+### Notification Strategy
+- Critical alerts: Immediate (High risk positions)
+- Regular updates: Configurable interval (10-60s)
+- Daily summary: Portfolio overview
+- Multiple channels: Telegram, Discord, Email
+
+## Testing Strategy
+
+### Unit Tests
+- All technical indicator calculations
+- API client error handling
+- Decision engine logic
+
+### Integration Tests
+- End-to-end API data flow
+- Real-time WebSocket connections
+- Notification delivery
+
+### Performance Tests
+- Analysis pipeline latency
+- Concurrent position monitoring
+- API rate limit handling
+
+## Deployment Considerations
+
+### Environment Setup
+- Python 3.11+ virtual environment
+- Node.js 18+ for API services
+- PostgreSQL 15+ database
+- Redis 7+ for caching
+
+### Production Readiness
+- Docker containerization
+- Environment-specific configurations
+- Health check endpoints
+- Graceful shutdown handling
+
+## Known Challenges & Solutions
+
+### API Rate Limits
+- Implement request batching
+- Use WebSocket for real-time data
+- Cache frequently accessed data
+- Implement exponential backoff
+
+### Real-time Performance
+- Optimize technical indicator calculations
+- Use efficient data structures
+- Implement connection pooling
+- Profile and monitor latency
+
+### Data Synchronization
+- Event-driven architecture
+- Eventual consistency model
+- Conflict resolution strategies
+- Data validation layers
+
+## Previous Work Integration
+Based on memory: Previous position analysis system exists with complete_position_analyzer.py and dashboard for 193+ symbols. Consider integrating existing work or building upon proven patterns.
+
+## Future Enhancements
+- Backtesting module
+- Paper trading simulation
+- On-chain wallet analysis
+- Custom strategy building
+- Multi-exchange support 

@@ -1,0 +1,22 @@
+# Ultra-minimal requirements for AI Trading Assistant
+# For Python 3.13 compatibility - no pandas/numpy for now
+
+# Core Framework
+fastapi==0.104.1
+uvicorn[standard]==0.24.0
+pydantic==2.5.0
+pydantic-settings==2.1.0
+
+# Database & ORM
+sqlalchemy==2.0.23
+
+# API Clients & HTTP
+httpx==0.25.2
+
+# Configuration & Environment
+python-dotenv==1.0.0
+PyYAML==6.0.1
+
+# Utilities
+python-dateutil==2.8.2
+click==8.1.7 

@@ -1,0 +1,19 @@
+# Ultra-minimal requirements for AI Trading Assistant
+# Compatible with Python 3.13 - using older stable versions
+
+# Core Framework - older versions that definitely work
+fastapi==0.68.0
+uvicorn==0.15.0
+
+# Database & ORM - older stable version
+sqlalchemy==1.4.23
+
+# API Clients & HTTP
+httpx==0.24.1
+
+# Configuration & Environment  
+PyYAML==6.0
+python-dotenv==0.19.0
+
+# Basic utilities
+click==8.0.1 
