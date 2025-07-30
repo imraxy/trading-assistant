@@ -38,30 +38,56 @@ class BybitClient:
     Implements proper authentication, rate limiting, and error handling.
     """
     
-    def __init__(self, api_key: str = None, api_secret: str = None, testnet: bool = True):
+    def __init__(self, api_key: str = None, api_secret: str = None, testnet: bool = None):
         self.settings = get_settings()
         
         # Use provided credentials or fall back to config
         self.api_key = api_key or self.settings.bybit.api_key
         self.api_secret = api_secret or self.settings.bybit.api_secret
         
-        # Set base URL based on environment
-        if testnet:
-            self.base_url = "https://api-testnet.bybit.com"
+        # Determine environment - use provided testnet param, or fall back to config
+        if testnet is not None:
+            self.use_testnet = testnet
         else:
-            self.base_url = "https://api.bybit.com"
+            self.use_testnet = self.settings.bybit.use_testnet
+        
+        # Set URLs based on environment
+        self.base_url = self.settings.bybit.get_base_url() if testnet is None else (
+            self.settings.bybit.testnet_url if testnet else self.settings.bybit.mainnet_url
+        )
+        self.fallback_url = self.settings.bybit.get_fallback_url() if testnet is None else (
+            self.settings.bybit.testnet_fallback_url if testnet else self.settings.bybit.mainnet_fallback_url
+        )
         
         self.recv_window = 5000  # 5 seconds
         
-        # Rate limiting: Bybit allows 120 requests per minute for most endpoints
+        # Enhanced rate limiting from config
         self.rate_limit_calls = []
-        self.max_calls_per_minute = 50  # More conservative limit to avoid rate limit hits
+        self.max_calls_per_minute = self.settings.bybit.rate_limit_requests
+        self.rate_limit_window = self.settings.bybit.rate_limit_window
         
-        # Initialize HTTP client
+        # Connection and error handling settings
+        self.max_retries = self.settings.bybit.max_retries
+        self.retry_delay = self.settings.bybit.retry_delay
+        self.connection_errors = 0
+        self.max_connection_errors = self.settings.bybit.max_connection_errors
+        self.connection_error_cooldown = self.settings.bybit.connection_error_cooldown
+        self.circuit_breaker_active = False
+        self.last_error_time = 0
+        
+        # Initialize HTTP client with enhanced settings
         self.client = httpx.AsyncClient(
-            timeout=30.0,
-            limits=httpx.Limits(max_keepalive_connections=10, max_connections=20)
+            timeout=self.settings.bybit.request_timeout,
+            limits=httpx.Limits(
+                max_keepalive_connections=self.settings.bybit.connection_pool_size,
+                max_connections=self.settings.bybit.connection_pool_size * 2
+            ),
+            verify=self.settings.bybit.verify_ssl
         )
+        
+        logger.info(f"BybitClient initialized for {self.settings.bybit.get_environment_name()} environment")
+        logger.info(f"Base URL: {self.base_url}")
+        logger.info(f"Fallback URL: {self.fallback_url}")
     
     def _generate_signature(self, timestamp: str, params: str) -> str:
         """Generate HMAC SHA256 signature for Bybit API"""
@@ -78,20 +104,52 @@ class BybitClient:
         return signature
     
     async def _check_rate_limit(self):
-        """Check and enforce rate limiting"""
+        """Enhanced rate limiting with configurable window"""
         now = time.time()
-        # Remove calls older than 1 minute
-        self.rate_limit_calls = [call_time for call_time in self.rate_limit_calls if now - call_time < 60]
+        
+        # Check circuit breaker
+        if self.circuit_breaker_active:
+            if now - self.last_error_time < self.connection_error_cooldown:
+                raise BybitAPIError(
+                    f"Circuit breaker active. Cooldown period: {self.connection_error_cooldown}s",
+                    status_code=503
+                )
+            else:
+                # Reset circuit breaker
+                self.circuit_breaker_active = False
+                self.connection_errors = 0
+                logger.info("Circuit breaker reset - resuming operations")
+        
+        # Remove calls older than the configured window
+        window = self.rate_limit_window
+        self.rate_limit_calls = [call_time for call_time in self.rate_limit_calls if now - call_time < window]
         
         if len(self.rate_limit_calls) >= self.max_calls_per_minute:
-            sleep_time = 60 - (now - self.rate_limit_calls[0])
-            logger.warning(f"Rate limit reached, sleeping for {sleep_time:.2f} seconds")
+            sleep_time = window - (now - self.rate_limit_calls[0])
+            logger.warning(f"Rate limit reached ({len(self.rate_limit_calls)}/{self.max_calls_per_minute}), sleeping for {sleep_time:.2f} seconds")
             await asyncio.sleep(sleep_time)
         
         self.rate_limit_calls.append(now)
         
         # Add small delay between all requests to be extra conservative
         await asyncio.sleep(0.1)
+    
+    async def _handle_connection_error(self, error: Exception):
+        """Handle connection errors with circuit breaker pattern"""
+        self.connection_errors += 1
+        self.last_error_time = time.time()
+        
+        logger.error(f"Connection error #{self.connection_errors}: {error}")
+        
+        if (self.settings.bybit.enable_circuit_breaker and
+            self.connection_errors >= self.max_connection_errors):
+            self.circuit_breaker_active = True
+            logger.error(f"Circuit breaker activated after {self.connection_errors} errors")
+            raise BybitAPIError(
+                f"Circuit breaker activated after {self.connection_errors} consecutive errors. "
+                f"Cooldown period: {self.connection_error_cooldown}s",
+                status_code=503
+            )
     
     async def _make_request(
         self, 
@@ -387,11 +445,11 @@ class BybitClient:
 
 # Helper function to create client with settings
 def create_bybit_client(api_key: str = None, api_secret: str = None, testnet: bool = None) -> BybitClient:
-    """Create a Bybit client with configuration from settings"""
+    """Create a Bybit client with enhanced configuration from settings"""
     settings = get_settings()
     
     return BybitClient(
         api_key=api_key or settings.bybit.api_key,
         api_secret=api_secret or settings.bybit.api_secret,
-        testnet=testnet if testnet is not None else settings.bybit.testnet
-    ) 
+        testnet=testnet if testnet is not None else settings.bybit.use_testnet
+    )

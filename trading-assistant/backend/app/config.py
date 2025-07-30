@@ -29,16 +29,130 @@ class DatabaseConfig(BaseSettings):
 
 
 class BybitConfig(BaseSettings):
-    """Bybit API configuration"""
+    """Enhanced Bybit API configuration with validation and error handling"""
     api_key: Optional[str] = Field(default=None)
     api_secret: Optional[str] = Field(default=None)
-    testnet: bool = Field(default=True)  # Start with testnet for safety
+    
+    # Environment selection
+    use_testnet: bool = Field(default=True, description="Use testnet environment")
+    testnet_url: str = Field(default="https://api-testnet.bybit.com")
+    mainnet_url: str = Field(default="https://api.bybit.com")
+    
+    # Performance and connection settings
+    request_timeout: int = Field(default=30, ge=5, le=300)
+    max_retries: int = Field(default=3, ge=0, le=10)
+    retry_delay: int = Field(default=1, ge=0, le=60)
+    connection_pool_size: int = Field(default=10, ge=1, le=100)
+    
+    # Rate limiting
+    rate_limit_requests: int = Field(default=100, ge=1, le=1000)
+    rate_limit_window: int = Field(default=60, ge=1, le=3600)
+    
+    # Fallback URLs
+    testnet_fallback_url: str = Field(default="https://api-testnet.bytick.com")
+    mainnet_fallback_url: str = Field(default="https://api.bytick.com")
+    
+    # Health check settings
+    health_check_endpoint: str = Field(default="/v5/market/time")
+    health_check_interval: int = Field(default=300, ge=60, le=3600)
+    
+    # Error handling
+    max_connection_errors: int = Field(default=5, ge=1, le=50)
+    connection_error_cooldown: int = Field(default=60, ge=10, le=3600)
+    enable_circuit_breaker: bool = Field(default=True)
+    
+    # Validation and security
+    validate_config_on_startup: bool = Field(default=True)
+    verify_ssl: bool = Field(default=True)
+    enable_signature_validation: bool = Field(default=True)
+    strict_mode: bool = Field(default=True)
+    
+    # API versioning
+    api_version: str = Field(default="v5")
+    
+    # Legacy compatibility (derived from use_testnet)
+    testnet: bool = Field(default=True)
     base_url: str = Field(default="https://api-testnet.bybit.com")
 
     class Config:
         env_prefix = "BYBIT_"
         env_file = ".env"
         env_file_encoding = "utf-8"
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        # Ensure legacy compatibility
+        self.testnet = self.use_testnet
+        self.base_url = self.get_base_url()
+        
+        # Validate configuration if enabled
+        if self.validate_config_on_startup:
+            self._validate_configuration()
+    
+    def get_base_url(self) -> str:
+        """Get the appropriate base URL based on testnet setting"""
+        return self.testnet_url if self.use_testnet else self.mainnet_url
+    
+    def get_fallback_url(self) -> str:
+        """Get the appropriate fallback URL based on testnet setting"""
+        return self.testnet_fallback_url if self.use_testnet else self.mainnet_fallback_url
+    
+    def _validate_configuration(self):
+        """Validate configuration consistency and security"""
+        from urllib.parse import urlparse
+        import warnings
+        
+        # Validate URLs
+        urls_to_check = [
+            self.testnet_url, self.mainnet_url,
+            self.testnet_fallback_url, self.mainnet_fallback_url
+        ]
+        
+        for url in urls_to_check:
+            parsed = urlparse(url)
+            if not all([parsed.scheme, parsed.netloc]):
+                raise ValueError(f"Invalid URL format: {url}")
+            
+            if not parsed.scheme.startswith('http'):
+                raise ValueError(f"URL must use HTTP/HTTPS protocol: {url}")
+        
+        # Validate environment consistency
+        if self.use_testnet and 'testnet' not in self.get_base_url().lower():
+            warnings.warn(
+                "Testnet enabled but base URL doesn't contain 'testnet'. "
+                "This may indicate a configuration mismatch.",
+                UserWarning
+            )
+        
+        if not self.use_testnet and 'testnet' in self.get_base_url().lower():
+            warnings.warn(
+                "Mainnet enabled but base URL contains 'testnet'. "
+                "This may indicate a configuration mismatch.",
+                UserWarning
+            )
+        
+        # Validate API credentials for production
+        if not self.use_testnet and self.strict_mode:
+            if not self.api_key or not self.api_secret:
+                raise ValueError(
+                    "API credentials are required for mainnet in strict mode"
+                )
+        
+        # Validate SSL settings for production
+        if not self.use_testnet and not self.verify_ssl:
+            warnings.warn(
+                "SSL verification is disabled for mainnet. "
+                "This is not recommended for production use.",
+                UserWarning
+            )
+    
+    def is_production(self) -> bool:
+        """Check if running in production mode (mainnet)"""
+        return not self.use_testnet
+    
+    def get_environment_name(self) -> str:
+        """Get human-readable environment name"""
+        return "testnet" if self.use_testnet else "mainnet"
 
 
 class OpenAIConfig(BaseSettings):

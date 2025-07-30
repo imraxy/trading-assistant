@@ -1,0 +1,29 @@
+{
+  "name": "ai-debug-server",
+  "version": "1.0.0",
+  "description": "Real-time browser debugging server for AI-assisted development",
+  "main": "debug-server.js",
+  "scripts": {
+    "start": "node debug-server.js",
+    "dev": "nodemon debug-server.js",
+    "test": "node test-debug-server.js"
+  },
+  "keywords": [
+    "debugging",
+    "websocket",
+    "ai",
+    "browser",
+    "real-time"
+  ],
+  "author": "Kilo Code",
+  "license": "MIT",
+  "dependencies": {
+    "ws": "^8.14.2"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.2"
+  },
+  "engines": {
+    "node": ">=14.0.0"
+  }
+}

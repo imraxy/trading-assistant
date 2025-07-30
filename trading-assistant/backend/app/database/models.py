@@ -191,4 +191,131 @@ class Alert(Base):
         Index('idx_alert_type', 'alert_type'),
         Index('idx_alert_severity', 'severity'),
         Index('idx_alert_sent', 'is_sent'),
-    ) 
+    )
+
+
+class PortfolioSnapshot(Base):
+    """Daily portfolio snapshots for historical tracking"""
+    __tablename__ = "portfolio_snapshots"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    total_positions = Column(Integer, nullable=False)
+    active_positions = Column(Integer, nullable=False)
+    total_pnl = Column(DECIMAL(20, 8), nullable=False)
+    net_exposure = Column(DECIMAL(20, 8), nullable=False)
+    total_exposure = Column(DECIMAL(20, 8), nullable=False)
+    portfolio_value = Column(DECIMAL(20, 8), nullable=False)
+    avg_leverage = Column(DECIMAL(5, 2), nullable=False)
+    risk_score = Column(Integer, nullable=False)
+    long_positions_count = Column(Integer, nullable=False)
+    short_positions_count = Column(Integer, nullable=False)
+    validation_score = Column(DECIMAL(3, 2), nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    
+    # Indexes
+    __table_args__ = (
+        Index('idx_portfolio_snapshot_date', 'created_at'),
+        Index('idx_portfolio_snapshot_risk', 'risk_score'),
+    )
+
+
+class RealizedPnL(Base):
+    """Track realized P&L from closed positions"""
+    __tablename__ = "realized_pnl"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    account_id = Column(Integer, ForeignKey("accounts.id"), nullable=False)
+    symbol = Column(String(50), nullable=False)
+    side = Column(String(10), nullable=False)
+    size = Column(DECIMAL(20, 8), nullable=False)
+    entry_price = Column(DECIMAL(20, 8), nullable=False)
+    exit_price = Column(DECIMAL(20, 8), nullable=False)
+    realized_pnl = Column(DECIMAL(20, 8), nullable=False)
+    pnl_percentage = Column(DECIMAL(10, 4), nullable=False)
+    leverage = Column(Integer, nullable=False)
+    fees = Column(DECIMAL(20, 8), nullable=True)
+    funding_cost = Column(DECIMAL(20, 8), nullable=True)
+    trade_duration_minutes = Column(Integer, nullable=True)
+    opened_at = Column(DateTime(timezone=True), nullable=False)
+    closed_at = Column(DateTime(timezone=True), nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    
+    # Relationships
+    account = relationship("Account")
+    
+    # Indexes
+    __table_args__ = (
+        Index('idx_realized_pnl_symbol', 'symbol'),
+        Index('idx_realized_pnl_account', 'account_id'),
+        Index('idx_realized_pnl_date', 'closed_at'),
+        Index('idx_realized_pnl_symbol_date', 'symbol', 'closed_at'),
+    )
+
+
+class PositionCorrelation(Base):
+    """Store calculated position correlations"""
+    __tablename__ = "position_correlations"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    symbol_1 = Column(String(50), nullable=False)
+    symbol_2 = Column(String(50), nullable=False)
+    correlation_coefficient = Column(DECIMAL(5, 4), nullable=False)  # -1.0 to 1.0
+    correlation_strength = Column(String(20), nullable=False)  # STRONG, MODERATE, WEAK
+    timeframe = Column(String(10), nullable=False)  # 1d, 7d, 30d
+    data_points = Column(Integer, nullable=False)
+    statistical_significance = Column(DECIMAL(3, 2), nullable=True)
+    calculated_at = Column(DateTime(timezone=True), server_default=func.now())
+    
+    # Indexes
+    __table_args__ = (
+        Index('idx_correlation_symbols', 'symbol_1', 'symbol_2'),
+        Index('idx_correlation_timeframe', 'timeframe'),
+        Index('idx_correlation_date', 'calculated_at'),
+    )
+
+
+class ValidationLog(Base):
+    """Log validation results and discrepancies"""
+    __tablename__ = "validation_logs"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    validation_type = Column(String(50), nullable=False)  # portfolio_aggregation, position_calculation, etc
+    validation_score = Column(DECIMAL(3, 2), nullable=False)
+    discrepancies_count = Column(Integer, nullable=False)
+    critical_issues = Column(Integer, nullable=False)
+    warnings_count = Column(Integer, nullable=False)
+    details = Column(Text, nullable=True)  # JSON or text details
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    
+    # Indexes
+    __table_args__ = (
+        Index('idx_validation_type', 'validation_type'),
+        Index('idx_validation_score', 'validation_score'),
+        Index('idx_validation_date', 'created_at'),
+    )
+
+
+class PortfolioMetrics(Base):
+    """Store calculated portfolio performance metrics"""
+    __tablename__ = "portfolio_metrics"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    metric_date = Column(DateTime(timezone=True), nullable=False)
+    sharpe_ratio = Column(DECIMAL(8, 4), nullable=True)
+    max_drawdown = Column(DECIMAL(8, 4), nullable=True)
+    win_rate = Column(DECIMAL(5, 2), nullable=True)
+    avg_trade_duration = Column(DECIMAL(10, 2), nullable=True)  # in hours
+    total_trades = Column(Integer, nullable=False)
+    profitable_trades = Column(Integer, nullable=False)
+    largest_win = Column(DECIMAL(20, 8), nullable=True)
+    largest_loss = Column(DECIMAL(20, 8), nullable=True)
+    avg_win = Column(DECIMAL(20, 8), nullable=True)
+    avg_loss = Column(DECIMAL(20, 8), nullable=True)
+    profit_factor = Column(DECIMAL(8, 4), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    
+    # Indexes
+    __table_args__ = (
+        Index('idx_portfolio_metrics_date', 'metric_date'),
+        Index('idx_portfolio_metrics_created', 'created_at'),
+    )

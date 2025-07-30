@@ -23,6 +23,11 @@ from app.services.market_data_service import MarketDataService
 from app.services.progress_tracker import get_progress_tracker
 from app.services.position_analysis_service import PositionAnalysisService
 from app.services.enhanced_position_analysis_service import EnhancedPositionAnalysisService
+from app.services.portfolio_aggregation_service import PortfolioAggregationService
+from app.services.portfolio_analytics_engine import PortfolioAnalyticsEngine
+from app.services.realtime_update_service import (
+    get_realtime_service, stop_realtime_service, UpdateType, UpdateMessage
+)
 import uuid
 
 # Configure logging
@@ -74,11 +79,23 @@ async def startup_event():
 async def shutdown_event():
     """Cleanup on application shutdown"""
     logger.info("Shutting down AI Trading Assistant...")
+    
+    # Stop real-time service
+    try:
+        await stop_realtime_service()
+        logger.info("Real-time service stopped")
+    except Exception as e:
+        logger.error(f"Error stopping real-time service: {e}")
 
 
 @app.get("/")
 async def dashboard():
-    """Serve the enhanced trading dashboard"""
+    """Serve the enhanced trading dashboard v2 with in-place updates"""
+    return FileResponse("../frontend/enhanced-dashboard-v2.html")
+
+@app.get("/v1")
+async def dashboard_v1():
+    """Serve the original enhanced trading dashboard"""
     return FileResponse("../frontend/enhanced-dashboard.html")
 
 @app.get("/basic")
@@ -392,20 +409,27 @@ async def progressive_analysis_task(task_id: str, db: Session):
                         else:
                             recommendation = {"action": "👀 HOLD", "urgency": "none", "reason": "Position stable", "confidence": 50}
                         
+                        position_value = float(pos.get("positionValue", 0))
                         analyzed_positions.append({
                             "symbol": pos.get("symbol", ""),
                             "side": pos.get("side", ""),
                             "size": float(pos.get("size", 0)),
+                            "size_usd": round(position_value, 2),  # USD value of the position size
                             "entry_price": float(pos.get("avgPrice", 0)),
                             "current_price": float(pos.get("markPrice", 0)),
                             "pnl_amount": float(pos.get("unrealisedPnl", 0)),
                             "pnl_percentage": round(pnl_pct, 2),
                             "leverage": leverage,
-                            "position_value": float(pos.get("positionValue", 0)),
+                            "position_value": position_value,
                             "risk_score": risk_score,
                             "risk_level": risk_level,
                             "recommendation": recommendation,
-                            "trend": {"direction": "analyzing...", "strength": "unknown"},
+                            "trend": {"direction": "analyzing...", "strength": "unknown", "confidence": "N/A"},
+                            "key_levels": {
+                                "stop_loss": "Calculating...",
+                                "take_profit_1": "Calculating...",
+                                "take_profit_2": "Calculating..."
+                            },
                             "last_analyzed": datetime.now(timezone.utc).isoformat()
                         })
                     except Exception as e:
@@ -574,6 +598,190 @@ async def get_multi_source_positions(
             "message": "Failed to get multi-source positions",
             "error": str(e)
         })
+@app.get("/api/v1/positions/multi-source-progressive")
+async def get_multi_source_positions_progressive(
+    background_tasks: BackgroundTasks,
+    task_id: Optional[str] = None,
+    sort_by: str = "pnl_percentage",
+    sort_order: str = "desc",
+    filter_risk: Optional[str] = None,
+    filter_side: Optional[str] = None,
+    filter_symbol: Optional[str] = None,
+    min_pnl: Optional[float] = None,
+    max_pnl: Optional[float] = None,
+    min_leverage: Optional[int] = None,
+    max_leverage: Optional[int] = None,
+    enable_technical_analysis: bool = True,
+    enable_sentiment_analysis: bool = True,
+    db: Session = Depends(get_db)
+):
+    """Get enhanced positions with progressive multi-source analysis"""
+    try:
+        progress_tracker = get_progress_tracker()
+        
+        if task_id:
+            # Return current progress for existing task
+            task_progress = progress_tracker.get_task(task_id)
+            if task_progress:
+                partial_results = progress_tracker.get_latest_data(task_id, 'partial_results') or []
+                final_results = progress_tracker.get_latest_data(task_id, 'final_results') or []
+                
+                # Apply filters to partial results
+                filtered_partial = apply_position_filters(
+                    partial_results, filter_risk, filter_side, filter_symbol, 
+                    min_pnl, max_pnl, min_leverage, max_leverage
+                )
+                
+                # Apply sorting
+                sorted_partial = apply_position_sorting(filtered_partial, sort_by, sort_order)
+                
+                return {
+                    "status": "success",
+                    "task_id": task_id,
+                    "progress": task_progress,
+                    "partial_results": sorted_partial,
+                    "final_results": final_results if task_progress.status == 'completed' else [],
+                    "analysis_type": "multi-source-progressive",
+                    "data_sources": {
+                        "bybit": "✅ Positions",
+                        "coingecko": "✅ Price data (unlimited)",
+                        "alpha_vantage": "⚠️ Technical indicators (500/day)" if enable_technical_analysis else "❌ Disabled",
+                        "news_api": "⚠️ Sentiment analysis (1000/day)" if enable_sentiment_analysis else "❌ Disabled"
+                    }
+                }
+            else:
+                return {"status": "error", "message": "Task not found"}
+        
+        else:
+            # Start new progressive multi-source analysis
+            new_task_id = str(uuid.uuid4())
+            progress_tracker.start_task(new_task_id, "Progressive Multi-Source Analysis", total_steps=100)
+            
+            # Start background task
+            background_tasks.add_task(
+                progressive_multi_source_analysis_task, 
+                new_task_id, 
+                db, 
+                enable_technical_analysis, 
+                enable_sentiment_analysis
+            )
+            
+            return {
+                "status": "success", 
+                "task_id": new_task_id,
+                "message": "Progressive multi-source analysis started",
+                "analysis_type": "multi-source-progressive"
+            }
+            
+    except Exception as e:
+        logger.error(f"Error in progressive multi-source positions: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+async def progressive_multi_source_analysis_task(
+    task_id: str, 
+    db: Session, 
+    enable_technical_analysis: bool, 
+    enable_sentiment_analysis: bool
+):
+    """Background task for progressive multi-source position analysis"""
+    try:
+        progress_tracker = get_progress_tracker()
+        progress_tracker.update_progress(task_id, "Fetching positions...", 0.1)
+        
+        async with create_bybit_client() as client:
+            # Fetch positions
+            all_positions_data = await client.get_positions(category="linear", settle_coin="USDT")
+            active_positions = [pos for pos in all_positions_data if float(pos.get("size", 0)) > 0]
+            
+            progress_tracker.update_progress(task_id, f"Found {len(active_positions)} active positions", 0.2)
+            
+            if not active_positions:
+                progress_tracker.complete_task(task_id, "No active positions found")
+                return
+            
+            # Progressive analysis callback
+            async def progress_callback(analyzed_positions, progress, message):
+                progress_tracker.update_progress(
+                    task_id,
+                    message,
+                    0.2 + (progress * 0.8),  # Scale progress from 0.2 to 1.0
+                    extra_data={"partial_results": analyzed_positions}
+                )
+            
+            # Use enhanced multi-source analysis with progress callback
+            async with EnhancedPositionAnalysisService(
+                client, db, enable_technical_analysis, enable_sentiment_analysis
+            ) as analysis_service:
+                analyzed_positions = await analysis_service.analyze_all_positions(
+                    active_positions, progress_callback
+                )
+            
+            # Complete the task with final results
+            progress_tracker.update_progress(
+                task_id,
+                f"Multi-source analysis complete: {len(analyzed_positions)} positions",
+                1.0,
+                extra_data={"final_results": analyzed_positions}
+            )
+            progress_tracker.complete_task(task_id, f"Multi-source analysis complete: {len(analyzed_positions)} positions")
+            
+    except Exception as e:
+        logger.error(f"Progressive multi-source analysis task failed: {e}")
+        progress_tracker.error_task(task_id, f"Multi-source analysis failed: {str(e)}")
+
+
+def apply_position_filters(positions, filter_risk, filter_side, filter_symbol, min_pnl, max_pnl, min_leverage, max_leverage):
+    """Apply filters to position list"""
+    filtered_positions = positions
+    
+    if filter_risk:
+        filtered_positions = [p for p in filtered_positions if p.get("risk_level") == filter_risk.upper()]
+    
+    if filter_side:
+        filtered_positions = [p for p in filtered_positions if p.get("side", "").lower() == filter_side.lower()]
+    
+    if filter_symbol:
+        filtered_positions = [p for p in filtered_positions if filter_symbol.upper() in p.get("symbol", "")]
+    
+    if min_pnl is not None:
+        filtered_positions = [p for p in filtered_positions if p.get("pnl_percentage", 0) >= min_pnl]
+    
+    if max_pnl is not None:
+        filtered_positions = [p for p in filtered_positions if p.get("pnl_percentage", 0) <= max_pnl]
+    
+    if min_leverage is not None:
+        filtered_positions = [p for p in filtered_positions if p.get("leverage", 0) >= min_leverage]
+    
+    if max_leverage is not None:
+        filtered_positions = [p for p in filtered_positions if p.get("leverage", 0) <= max_leverage]
+    
+    return filtered_positions
+
+
+def apply_position_sorting(positions, sort_by, sort_order):
+    """Apply sorting to position list"""
+    sort_key = sort_by
+    reverse_order = sort_order.lower() == "desc"
+    
+    if sort_key in ["pnl_percentage", "pnl_amount", "leverage", "position_value", "risk_score", "size_usd"]:
+        positions.sort(key=lambda x: x.get(sort_key, 0), reverse=reverse_order)
+    elif sort_key == "symbol":
+        positions.sort(key=lambda x: x.get("symbol", ""), reverse=reverse_order)
+    elif sort_key == "urgency":
+        urgency_order = {"immediate": 4, "high": 3, "medium": 2, "low": 1, "none": 0}
+        positions.sort(
+            key=lambda x: urgency_order.get(x.get("recommendation", {}).get("urgency", "none"), 0),
+            reverse=reverse_order
+        )
+    elif sort_key == "risk_level":
+        risk_order = {"CRITICAL": 4, "HIGH": 3, "MEDIUM": 2, "LOW": 1, "UNKNOWN": 0}
+        positions.sort(
+            key=lambda x: risk_order.get(x.get("risk_level", "UNKNOWN"), 0),
+            reverse=reverse_order
+        )
+    
+    return positions
 
 
 @app.get("/api/v1/debug/positions")
@@ -716,16 +924,18 @@ async def get_enhanced_positions(
                         else:
                             recommendation = {"action": "👀 HOLD", "urgency": "none", "reason": "Position stable", "confidence": 50}
                         
+                        position_value = float(pos.get("positionValue", 0))
                         analyzed_positions.append({
                             "symbol": pos.get("symbol", ""),
                             "side": pos.get("side", ""),
                             "size": float(pos.get("size", 0)),
+                            "size_usd": round(position_value, 2),  # USD value of the position size
                             "entry_price": float(pos.get("avgPrice", 0)),
                             "current_price": float(pos.get("markPrice", 0)),
                             "pnl_amount": float(pos.get("unrealisedPnl", 0)),
                             "pnl_percentage": round(pnl_pct, 2),
                             "leverage": leverage,
-                            "position_value": float(pos.get("positionValue", 0)),
+                            "position_value": position_value,
                             "risk_score": risk_score,
                             "risk_level": risk_level,
                             "recommendation": recommendation,
@@ -850,6 +1060,494 @@ async def get_stored_positions(db: Session = Depends(get_db)):
         raise HTTPException(status_code=500, detail={
             "status": "error",
             "message": "Failed to fetch stored positions",
+            "error": str(e)
+        })
+
+
+# Portfolio Aggregation & Analytics Endpoints
+
+@app.get("/api/v1/portfolio/comprehensive")
+async def get_comprehensive_portfolio(
+    include_analysis: bool = True,
+    validate_results: bool = True,
+    enable_technical_analysis: bool = True,
+    enable_sentiment_analysis: bool = True,
+    db: Session = Depends(get_db)
+):
+    """Get comprehensive portfolio view with aggregation and analytics"""
+    try:
+        async with create_bybit_client() as client:
+            logger.info("Fetching comprehensive portfolio data...")
+            
+            # Fetch all active positions
+            all_positions_data = await client.get_positions(category="linear", settle_coin="USDT")
+            active_positions = [pos for pos in all_positions_data if float(pos.get("size", 0)) > 0]
+            
+            if not active_positions:
+                return {
+                    "status": "success",
+                    "message": "No active positions found",
+                    "portfolio_summary": {},
+                    "analytics": {},
+                    "timestamp": datetime.now(timezone.utc).isoformat()
+                }
+            
+            # Initialize aggregation service
+            aggregation_service = PortfolioAggregationService(client, db, validation_tolerance=0.01)
+            
+            # Get comprehensive portfolio summary
+            portfolio_summary = await aggregation_service.aggregate_portfolio(
+                active_positions,
+                include_analysis=include_analysis,
+                validate_results=validate_results
+            )
+            
+            # Initialize analytics engine
+            analytics_engine = PortfolioAnalyticsEngine(client, db)
+            
+            # Calculate analytics
+            analytics = await analytics_engine.calculate_comprehensive_analytics(active_positions)
+            
+            return {
+                "status": "success",
+                "portfolio_summary": {
+                    "total_positions": portfolio_summary.total_positions,
+                    "active_positions": portfolio_summary.active_positions,
+                    "total_unrealized_pnl": float(portfolio_summary.total_unrealized_pnl),
+                    "total_realized_pnl": float(portfolio_summary.total_realized_pnl),
+                    "net_exposure": float(portfolio_summary.net_exposure),
+                    "total_exposure": float(portfolio_summary.total_exposure),
+                    "portfolio_value": float(portfolio_summary.portfolio_value),
+                    "avg_leverage": portfolio_summary.avg_leverage,
+                    "portfolio_risk_score": portfolio_summary.portfolio_risk_score,
+                    "long_summary": {
+                        "count": portfolio_summary.long_summary.count,
+                        "total_value": float(portfolio_summary.long_summary.total_value),
+                        "unrealized_pnl": float(portfolio_summary.long_summary.unrealized_pnl),
+                        "avg_leverage": portfolio_summary.long_summary.avg_leverage,
+                        "risk_distribution": portfolio_summary.long_summary.risk_distribution,
+                        "top_positions": portfolio_summary.long_summary.top_positions[:5]
+                    },
+                    "short_summary": {
+                        "count": portfolio_summary.short_summary.count,
+                        "total_value": float(portfolio_summary.short_summary.total_value),
+                        "unrealized_pnl": float(portfolio_summary.short_summary.unrealized_pnl),
+                        "avg_leverage": portfolio_summary.short_summary.avg_leverage,
+                        "risk_distribution": portfolio_summary.short_summary.risk_distribution,
+                        "top_positions": portfolio_summary.short_summary.top_positions[:5]
+                    },
+                    "net_exposure_data": {
+                        "long_exposure": float(portfolio_summary.net_exposure_data.long_exposure),
+                        "short_exposure": float(portfolio_summary.net_exposure_data.short_exposure),
+                        "net_exposure": float(portfolio_summary.net_exposure_data.net_exposure),
+                        "net_ratio": portfolio_summary.net_exposure_data.net_ratio,
+                        "exposure_balance": portfolio_summary.net_exposure_data.exposure_balance
+                    },
+                    "symbol_allocation": portfolio_summary.symbol_allocation,
+                    "validation_status": {
+                        "is_valid": portfolio_summary.validation_status.is_valid,
+                        "validation_score": portfolio_summary.validation_status.validation_score,
+                        "discrepancies_count": len(portfolio_summary.validation_status.discrepancies),
+                        "warnings": portfolio_summary.validation_status.validation_warnings
+                    }
+                },
+                "analytics": {
+                    "performance_metrics": {
+                        "sharpe_ratio": analytics.performance_metrics.sharpe_ratio,
+                        "max_drawdown": analytics.performance_metrics.max_drawdown,
+                        "win_rate": analytics.performance_metrics.win_rate,
+                        "profit_factor": analytics.performance_metrics.profit_factor,
+                        "total_trades": analytics.performance_metrics.total_trades,
+                        "profitable_trades": analytics.performance_metrics.profitable_trades
+                    },
+                    "risk_metrics": {
+                        "value_at_risk_95": analytics.risk_metrics.value_at_risk_95,
+                        "concentration_index": analytics.risk_metrics.concentration_index,
+                        "leverage_risk_score": analytics.risk_metrics.leverage_risk_score,
+                        "correlation_risk_score": analytics.risk_metrics.correlation_risk_score
+                    },
+                    "correlation_matrix": analytics.correlation_matrix,
+                    "sector_allocation": analytics.sector_allocation,
+                    "trend_analysis": analytics.trend_analysis,
+                    "recommendations": analytics.recommendations
+                },
+                "calculation_time": {
+                    "portfolio_duration": portfolio_summary.calculation_duration,
+                    "analytics_duration": analytics.calculation_duration
+                },
+                "timestamp": datetime.now(timezone.utc).isoformat()
+            }
+            
+    except Exception as e:
+        logger.error(f"Error getting comprehensive portfolio: {e}")
+        raise HTTPException(status_code=500, detail={
+            "status": "error",
+            "message": "Failed to get comprehensive portfolio",
+            "error": str(e)
+        })
+
+
+@app.get("/api/v1/portfolio/long-positions")
+async def get_long_positions(
+    include_analysis: bool = True,
+    db: Session = Depends(get_db)
+):
+    """Get aggregated long positions with detailed analysis"""
+    try:
+        async with create_bybit_client() as client:
+            # Fetch positions
+            all_positions_data = await client.get_positions(category="linear", settle_coin="USDT")
+            active_positions = [pos for pos in all_positions_data if float(pos.get("size", 0)) > 0]
+            
+            # Filter long positions
+            long_positions = [pos for pos in active_positions if pos.get("side", "").lower() in ["buy", "long"]]
+            
+            if not long_positions:
+                return {
+                    "status": "success",
+                    "message": "No long positions found",
+                    "long_summary": {},
+                    "positions": [],
+                    "timestamp": datetime.now(timezone.utc).isoformat()
+                }
+            
+            # Initialize services
+            aggregation_service = PortfolioAggregationService(client, db)
+            
+            # Enrich with analysis if requested
+            if include_analysis:
+                async with EnhancedPositionAnalysisService(
+                    client, db, enable_technical_analysis=True, enable_sentiment_analysis=True
+                ) as analysis_service:
+                    long_positions = await analysis_service.analyze_all_positions(long_positions)
+            
+            # Create long summary
+            long_summary = await aggregation_service._create_direction_summary(long_positions, "long")
+            
+            return {
+                "status": "success",
+                "long_summary": {
+                    "count": long_summary.count,
+                    "total_value": float(long_summary.total_value),
+                    "unrealized_pnl": float(long_summary.unrealized_pnl),
+                    "avg_leverage": long_summary.avg_leverage,
+                    "weighted_avg_leverage": long_summary.weighted_avg_leverage,
+                    "risk_distribution": long_summary.risk_distribution,
+                    "pnl_distribution": long_summary.pnl_distribution,
+                    "total_margin": float(long_summary.total_margin)
+                },
+                "positions": long_positions,
+                "metadata": {
+                    "analysis_included": include_analysis,
+                    "calculation_timestamp": datetime.now(timezone.utc).isoformat()
+                }
+            }
+            
+    except Exception as e:
+        logger.error(f"Error getting long positions: {e}")
+        raise HTTPException(status_code=500, detail={
+            "status": "error",
+            "message": "Failed to get long positions",
+            "error": str(e)
+        })
+
+
+@app.get("/api/v1/portfolio/short-positions")
+async def get_short_positions(
+    include_analysis: bool = True,
+    db: Session = Depends(get_db)
+):
+    """Get aggregated short positions with detailed analysis"""
+    try:
+        async with create_bybit_client() as client:
+            # Fetch positions
+            all_positions_data = await client.get_positions(category="linear", settle_coin="USDT")
+            active_positions = [pos for pos in all_positions_data if float(pos.get("size", 0)) > 0]
+            
+            # Filter short positions
+            short_positions = [pos for pos in active_positions if pos.get("side", "").lower() in ["sell", "short"]]
+            
+            if not short_positions:
+                return {
+                    "status": "success",
+                    "message": "No short positions found",
+                    "short_summary": {},
+                    "positions": [],
+                    "timestamp": datetime.now(timezone.utc).isoformat()
+                }
+            
+            # Initialize services
+            aggregation_service = PortfolioAggregationService(client, db)
+            
+            # Enrich with analysis if requested
+            if include_analysis:
+                async with EnhancedPositionAnalysisService(
+                    client, db, enable_technical_analysis=True, enable_sentiment_analysis=True
+                ) as analysis_service:
+                    short_positions = await analysis_service.analyze_all_positions(short_positions)
+            
+            # Create short summary
+            short_summary = await aggregation_service._create_direction_summary(short_positions, "short")
+            
+            return {
+                "status": "success",
+                "short_summary": {
+                    "count": short_summary.count,
+                    "total_value": float(short_summary.total_value),
+                    "unrealized_pnl": float(short_summary.unrealized_pnl),
+                    "avg_leverage": short_summary.avg_leverage,
+                    "weighted_avg_leverage": short_summary.weighted_avg_leverage,
+                    "risk_distribution": short_summary.risk_distribution,
+                    "pnl_distribution": short_summary.pnl_distribution,
+                    "total_margin": float(short_summary.total_margin)
+                },
+                "positions": short_positions,
+                "metadata": {
+                    "analysis_included": include_analysis,
+                    "calculation_timestamp": datetime.now(timezone.utc).isoformat()
+                }
+            }
+            
+    except Exception as e:
+        logger.error(f"Error getting short positions: {e}")
+        raise HTTPException(status_code=500, detail={
+            "status": "error",
+            "message": "Failed to get short positions",
+            "error": str(e)
+        })
+
+
+@app.get("/api/v1/portfolio/analytics")
+async def get_portfolio_analytics(
+    historical_days: int = 30,
+    db: Session = Depends(get_db)
+):
+    """Get advanced portfolio analytics and correlations"""
+    try:
+        async with create_bybit_client() as client:
+            # Fetch positions
+            all_positions_data = await client.get_positions(category="linear", settle_coin="USDT")
+            active_positions = [pos for pos in all_positions_data if float(pos.get("size", 0)) > 0]
+            
+            if not active_positions:
+                return {
+                    "status": "success",
+                    "message": "No positions for analytics",
+                    "analytics": {},
+                    "timestamp": datetime.now(timezone.utc).isoformat()
+                }
+            
+            # Initialize analytics engine
+            analytics_engine = PortfolioAnalyticsEngine(client, db)
+            
+            # Calculate comprehensive analytics
+            analytics = await analytics_engine.calculate_comprehensive_analytics(
+                active_positions, historical_days
+            )
+            
+            # Get historical performance
+            historical_performance = await analytics_engine.get_historical_performance(historical_days)
+            
+            return {
+                "status": "success",
+                "analytics": {
+                    "performance_metrics": {
+                        "sharpe_ratio": analytics.performance_metrics.sharpe_ratio,
+                        "max_drawdown": analytics.performance_metrics.max_drawdown,
+                        "win_rate": analytics.performance_metrics.win_rate,
+                        "profit_factor": analytics.performance_metrics.profit_factor,
+                        "avg_trade_duration": analytics.performance_metrics.avg_trade_duration,
+                        "total_trades": analytics.performance_metrics.total_trades,
+                        "profitable_trades": analytics.performance_metrics.profitable_trades,
+                        "largest_win": analytics.performance_metrics.largest_win,
+                        "largest_loss": analytics.performance_metrics.largest_loss,
+                        "volatility": analytics.performance_metrics.volatility
+                    },
+                    "risk_metrics": {
+                        "value_at_risk_95": analytics.risk_metrics.value_at_risk_95,
+                        "value_at_risk_99": analytics.risk_metrics.value_at_risk_99,
+                        "expected_shortfall": analytics.risk_metrics.expected_shortfall,
+                        "maximum_drawdown": analytics.risk_metrics.maximum_drawdown,
+                        "sortino_ratio": analytics.risk_metrics.sortino_ratio,
+                        "concentration_index": analytics.risk_metrics.concentration_index,
+                        "leverage_risk_score": analytics.risk_metrics.leverage_risk_score,
+                        "correlation_risk_score": analytics.risk_metrics.correlation_risk_score
+                    },
+                    "correlation_matrix": analytics.correlation_matrix,
+                    "sector_allocation": analytics.sector_allocation,
+                    "risk_adjusted_returns": analytics.risk_adjusted_returns,
+                    "trend_analysis": analytics.trend_analysis,
+                    "recommendations": analytics.recommendations
+                },
+                "historical_performance": historical_performance,
+                "metadata": {
+                    "calculation_duration": analytics.calculation_duration,
+                    "historical_days": historical_days,
+                    "last_calculated": analytics.last_calculated.isoformat()
+                },
+                "timestamp": datetime.now(timezone.utc).isoformat()
+            }
+            
+    except Exception as e:
+        logger.error(f"Error getting portfolio analytics: {e}")
+        raise HTTPException(status_code=500, detail={
+            "status": "error",
+            "message": "Failed to get portfolio analytics",
+            "error": str(e)
+        })
+
+
+@app.get("/api/v1/portfolio/validation")
+async def validate_portfolio_calculations(db: Session = Depends(get_db)):
+    """Validate portfolio calculations and return discrepancy report"""
+    try:
+        async with create_bybit_client() as client:
+            # Fetch positions
+            all_positions_data = await client.get_positions(category="linear", settle_coin="USDT")
+            active_positions = [pos for pos in all_positions_data if float(pos.get("size", 0)) > 0]
+            
+            if not active_positions:
+                return {
+                    "status": "success",
+                    "message": "No positions to validate",
+                    "validation_results": {},
+                    "timestamp": datetime.now(timezone.utc).isoformat()
+                }
+            
+            # Initialize aggregation service with strict validation
+            aggregation_service = PortfolioAggregationService(client, db, validation_tolerance=0.005)
+            
+            # Perform aggregation with validation
+            portfolio_summary = await aggregation_service.aggregate_portfolio(
+                active_positions,
+                include_analysis=False,  # Skip analysis for faster validation
+                validate_results=True
+            )
+            
+            # Get detailed validation results
+            validation_status = portfolio_summary.validation_status
+            
+            return {
+                "status": "success",
+                "validation_results": {
+                    "is_valid": validation_status.is_valid,
+                    "validation_score": validation_status.validation_score,
+                    "total_checks": validation_status.total_checks,
+                    "passed_checks": validation_status.passed_checks,
+                    "discrepancies": [
+                        {
+                            "field": d.field,
+                            "expected": d.expected,
+                            "actual": d.actual,
+                            "difference": d.difference,
+                            "severity": d.severity,
+                            "description": d.description
+                        } for d in validation_status.discrepancies
+                    ],
+                    "warnings": validation_status.validation_warnings,
+                    "last_validated": validation_status.last_validated.isoformat()
+                },
+                "summary_stats": {
+                    "total_positions_checked": len(active_positions),
+                    "critical_issues": len([d for d in validation_status.discrepancies if d.severity == "critical"]),
+                    "warnings": len([d for d in validation_status.discrepancies if d.severity == "warning"]),
+                    "errors": len([d for d in validation_status.discrepancies if d.severity == "error"])
+                },
+                "timestamp": datetime.now(timezone.utc).isoformat()
+            }
+            
+    except Exception as e:
+        logger.error(f"Error validating portfolio: {e}")
+        raise HTTPException(status_code=500, detail={
+            "status": "error",
+            "message": "Failed to validate portfolio calculations",
+            "error": str(e)
+        })
+
+
+@app.get("/api/v1/portfolio/correlation/{symbol1}/{symbol2}")
+async def get_position_correlation(
+    symbol1: str,
+    symbol2: str,
+    timeframe: str = "30d",
+    db: Session = Depends(get_db)
+):
+    """Get correlation data between two specific symbols"""
+    try:
+        async with create_bybit_client() as client:
+            analytics_engine = PortfolioAnalyticsEngine(client, db)
+            
+            # Get stored correlation data
+            correlation_data = await analytics_engine.get_correlation_data(symbol1, symbol2, timeframe)
+            
+            if correlation_data:
+                return {
+                    "status": "success",
+                    "correlation_data": {
+                        "symbol_1": correlation_data.symbol_1,
+                        "symbol_2": correlation_data.symbol_2,
+                        "correlation_coefficient": correlation_data.correlation_coefficient,
+                        "correlation_strength": correlation_data.correlation_strength,
+                        "data_points": correlation_data.data_points,
+                        "timeframe": correlation_data.timeframe,
+                        "statistical_significance": correlation_data.p_value
+                    },
+                    "interpretation": {
+                        "direction": "positive" if correlation_data.correlation_coefficient > 0 else "negative",
+                        "strength_description": {
+                            "STRONG": "These assets move very similarly",
+                            "MODERATE": "These assets show some correlation",
+                            "WEAK": "These assets show minimal correlation"
+                        }.get(correlation_data.correlation_strength, "Correlation strength unknown")
+                    },
+                    "timestamp": datetime.now(timezone.utc).isoformat()
+                }
+            else:
+                return {
+                    "status": "success",
+                    "message": f"No correlation data found for {symbol1}-{symbol2}",
+                    "correlation_data": None,
+                    "timestamp": datetime.now(timezone.utc).isoformat()
+                }
+                
+    except Exception as e:
+        logger.error(f"Error getting correlation for {symbol1}-{symbol2}: {e}")
+        raise HTTPException(status_code=500, detail={
+            "status": "error",
+            "message": f"Failed to get correlation data for {symbol1}-{symbol2}",
+            "error": str(e)
+        })
+
+
+@app.get("/api/v1/portfolio/historical")
+async def get_historical_portfolio_performance(
+    days: int = 30,
+    db: Session = Depends(get_db)
+):
+    """Get historical portfolio performance data"""
+    try:
+        async with create_bybit_client() as client:
+            analytics_engine = PortfolioAnalyticsEngine(client, db)
+            
+            # Get historical performance data
+            historical_data = await analytics_engine.get_historical_performance(days)
+            
+            return {
+                "status": "success",
+                "historical_data": historical_data,
+                "metadata": {
+                    "days_requested": days,
+                    "data_points": len(historical_data.get("portfolio_value_timeline", [])),
+                    "performance_points": len(historical_data.get("performance_timeline", []))
+                },
+                "timestamp": datetime.now(timezone.utc).isoformat()
+            }
+            
+    except Exception as e:
+        logger.error(f"Error getting historical portfolio performance: {e}")
+        raise HTTPException(status_code=500, detail={
+            "status": "error",
+            "message": "Failed to get historical portfolio performance",
             "error": str(e)
         })
 

@@ -104,6 +104,7 @@ class EnhancedPositionAnalysisService:
                 "symbol": symbol,
                 "side": side,
                 "size": size,
+                "size_usd": round(position_value, 2),  # USD value of the position size
                 "entry_price": entry_price,
                 "current_price": current_price,
                 "pnl_amount": unrealized_pnl,
@@ -505,15 +506,18 @@ class EnhancedPositionAnalysisService:
         """Return basic analysis when enhanced analysis fails"""
         pnl_pct = float(position_data.get("unrealisedPnl", 0)) / float(position_data.get("positionValue", 1)) * 100
         
+        position_value = float(position_data.get("positionValue", 0))
         return {
             "symbol": position_data.get("symbol", ""),
             "side": position_data.get("side", ""),
             "size": float(position_data.get("size", 0)),
+            "size_usd": round(position_value, 2),  # USD value of the position size
             "entry_price": float(position_data.get("avgPrice", 0)),
             "current_price": float(position_data.get("markPrice", 0)),
             "pnl_amount": float(position_data.get("unrealisedPnl", 0)),
             "pnl_percentage": round(pnl_pct, 2),
             "leverage": int(float(position_data.get("leverage", 1))),
+            "position_value": position_value,
             "risk_level": "UNKNOWN",
             "enhanced_data": {},
             "recommendation": {
@@ -528,7 +532,7 @@ class EnhancedPositionAnalysisService:
             "last_analyzed": datetime.now(timezone.utc).isoformat()
         }
     
-    async def analyze_all_positions(self, positions: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    async def analyze_all_positions(self, positions: List[Dict[str, Any]], progress_callback=None) -> List[Dict[str, Any]]:
         """Analyze multiple positions with enhanced data sources"""
         analyzed_positions = []
         
@@ -567,6 +571,11 @@ class EnhancedPositionAnalysisService:
             batch_results = await asyncio.gather(*batch_tasks)
             
             analyzed_positions.extend(batch_results)
+            
+            # Call progress callback if provided
+            if progress_callback:
+                progress = len(analyzed_positions) / len(positions)
+                await progress_callback(analyzed_positions.copy(), progress, f"Analyzed {len(analyzed_positions)}/{len(positions)} positions")
             
             # Shorter delay between batches since we're controlling concurrency
             if i + batch_size < len(positions):
