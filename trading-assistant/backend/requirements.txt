@@ -1,0 +1,49 @@
+# FastAPI and web framework dependencies
+fastapi==0.104.1
+uvicorn[standard]==0.24.0
+python-multipart==0.0.6
+
+# Configuration and validation
+pydantic==2.5.0
+pydantic-settings==2.1.0
+
+# Browser automation
+playwright==1.40.0
+
+# HTTP client
+httpx==0.25.2
+
+# Testing
+pytest==7.4.3
+pytest-asyncio==0.21.1
+
+# Development tools
+python-dotenv==1.0.0
+
+# Optional: Database support (if needed)
+# sqlalchemy==2.0.23
+# alembic==1.13.1
+
+# Optional: Additional dependencies
+# requests==2.31.0
+# aiofiles==23.2.1
+# Bybit API and trading integration
+pybit==5.7.0
+requests==2.31.0
+
+# Data analysis and mathematical calculations
+numpy==1.24.3
+pandas==2.0.3
+scipy==1.11.1
+
+# Additional HTTP client support
+aiohttp==3.9.1
+
+# Date and time handling
+python-dateutil==2.8.2
+
+# Logging and monitoring
+structlog==23.2.0
+
+# Testing extensions
+pytest-mock==3.12.0

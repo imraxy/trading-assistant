@@ -1,17 +1,45 @@
-# AI Trading Assistant - Project Intelligence
+# Crypto Analysis & Trading Assistant Project
 
-## Project Overview
-Real-time AI-powered trading assistant integrating Bybit, 3Commas, TradingView, and sentiment analysis for 193+ position monitoring with actionable recommendations.
+**Repository:** https://github.com/imraxy/trading-assistant.git  
+**Status:** 45% Complete - Week 2 Enhanced Position Analysis  
+**Last Updated:** January 30, 2025
 
-## Key Development Patterns
+## 🎯 Project Goal
 
-### Architecture Principles
-- **Microservices approach**: Separate API aggregator, analysis engine, and notification services
-- **Security-first**: Read-only API permissions, encrypted credentials, no persistent API key storage
-- **Performance-oriented**: Sub-5 second analysis latency, real-time WebSocket connections
-- **Modular design**: Independent analysis layers (Technical, Sentiment, Fundamental, AI Decision)
+Real-time AI-powered trading assistant that integrates with Bybit, 3Commas, and TradingView to provide actionable trading recommendations based on multi-layered technical analysis, sentiment analysis, and AI decision-making for 195+ cryptocurrency positions.
 
-### Code Organization
+## 🚀 Current Active Task
+
+**Phase:** Enhanced Position Analysis with Multi-Source Data Integration  
+**Priority:** Multi-source analysis system optimization and 3Commas API integration  
+**Next Milestone:** Week 3 - AI Decision Engine with GPT-4 integration
+
+## 🏗️ Project Architecture
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    Crypto Analysis Project                      │
+├─────────────────────────────────────────────────────────────────┤
+│  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐  │
+│  │ Trading         │  │ Debug Tools     │  │ Memory Bank     │  │
+│  │ Assistant       │  │ (Browser Utils) │  │ (Authoritative) │  │
+│  │                 │  │                 │  │                 │  │
+│  │ ┌─────────────┐ │  │ ┌─────────────┐ │  │ ┌─────────────┐ │  │
+│  │ │   Backend   │ │  │ │   Chrome    │ │  │ │  Context    │ │  │
+│  │ │ FastAPI +   │ │  │ │ Extensions  │ │  │ │   Files     │ │  │
+│  │ │ PostgreSQL  │ │  │ │ Puppeteer   │ │  │ │             │ │  │
+│  │ └─────────────┘ │  │ │ Alternatives│ │  │ └─────────────┘ │  │
+│  │ ┌─────────────┐ │  │                 │  │                 │  │
+│  │ │  Frontend   │ │  │                 │  │                 │  │
+│  │ │ HTML/JS +   │ │  │                 │  │                 │  │
+│  │ │ Alpine.js   │ │  │                 │  │                 │  │
+│  │ └─────────────┘ │  │                 │  │                 │  │
+│  └─────────────────┘  └─────────────────┘  └─────────────────┘  │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+## 📁 Git Repository Structure
+
 ```
 trading-assistant/
 ├── backend/
@@ -23,56 +51,42 @@ trading-assistant/
 └── memory-bank/           # Project documentation
 ```
 
-### Technology Decisions
-- **Python FastAPI** for analysis engine (async performance)
+## 🔧 Development Guidelines
+
+### Memory Bank Management
+- Authoritative Source: `memory-bank/` core files (`projectbrief.md`, `productContext.md`, `activeContext.md`, `systemPatterns.md`, `techContext.md`, `progress.md`) are the source of truth
+- README acts as a supplementary overview only
+- Update Process: Review ALL files when updating memory; prioritize `activeContext.md` and `progress.md`
+- Triggers: Feature changes, launch procedure updates, architecture decisions
+
+### Local Launch Notes (2025-08-08)
+- Backend runs locally at `http://localhost:8000` via `uvicorn app.main:app --reload`
+- `docker-compose.yml` exists but backend `Dockerfile` is missing; prefer local run until added
+- If `python3-venv` is unavailable, install deps with `pip3 --user -r requirements.txt`
+
+## 🛠️ Technology Decisions
+
+### Python FastAPI
+- Async performance for analysis engine
 - **TA-Lib** for technical indicators (industry standard)
 - **OpenAI GPT-4** with function calling for decision synthesis
 - **PostgreSQL** for structured data, Redis for caching
 - **WebSocket** for real-time updates (<5s latency requirement)
 
-## Development Workflow
+## 📚 Code Organization
 
-### Weekly Sprint Structure
-- Week 1: Bybit API + Basic TA
-- Week 2: Advanced indicators + Risk assessment
-- Week 3: Sentiment analysis layer
-- Week 4: AI decision engine
-- Week 5: Notification system
-- Week 6: Dashboard + Polish
-
-### Quality Gates
-- All API integrations must include error handling and rate limiting
-- Technical indicators must be validated against known values
-- Security: Never commit API keys, use environment variables
-- Performance: Profile analysis pipeline for <5s total latency
-
-## API Integration Patterns
-
-### Bybit API Strategy
-- REST for account/position data
-- WebSocket for real-time price feeds
-- Rate limiting: Batch requests where possible
-- Error handling: Exponential backoff, circuit breaker pattern
-
-### Data Flow
 ```
-Bybit API → Position Cache → Analysis Pipeline → AI Decision → User Alert
+trading-assistant/
+├── backend/
+│   ├── api-aggregator/     # Node.js - API collection hub
+│   ├── analysis-engine/    # Python - TA, sentiment, AI analysis
+│   └── notification-service/ # Alert management
+├── frontend/               # React/Next.js dashboard
+├── shared/                 # Common utilities and types
+└── memory-bank/           # Project documentation
 ```
 
-## Analysis Engine Patterns
-
-### Technical Analysis
-- Use TA-Lib for calculations (RSI, MACD, EMA, Bollinger Bands)
-- Multi-timeframe analysis (1m, 5m, 1h, 4h, 1d)
-- Normalize all indicators to consistent scales
-
-### AI Decision Logic
-- Combine Technical + Sentiment + Fundamental layers
-- GPT-4 function calling for structured decision output
-- Include reasoning explanation for each recommendation
-- Output format: Hold/Exit/Add/Watch with confidence scores
-
-## Security Patterns
+## 🔑 Security Patterns
 
 ### API Key Management
 - Environment variables for development
@@ -86,7 +100,7 @@ Bybit API → Position Cache → Analysis Pipeline → AI Decision → User Aler
 - Rate limiting on external APIs
 - No sensitive data in logs
 
-## Performance Optimization
+## 📊 Performance Optimization
 
 ### Real-time Requirements
 - WebSocket connection pooling
@@ -100,7 +114,7 @@ Bybit API → Position Cache → Analysis Pipeline → AI Decision → User Aler
 - Error rate monitoring
 - Resource usage alerting
 
-## User Experience Patterns
+## 💡 User Experience Patterns
 
 ### Decision Output Format
 ```
@@ -115,7 +129,7 @@ Bybit API → Position Cache → Analysis Pipeline → AI Decision → User Aler
 - Daily summary: Portfolio overview
 - Multiple channels: Telegram, Discord, Email
 
-## Testing Strategy
+## 🧪 Testing Strategy
 
 ### Unit Tests
 - All technical indicator calculations
@@ -132,7 +146,7 @@ Bybit API → Position Cache → Analysis Pipeline → AI Decision → User Aler
 - Concurrent position monitoring
 - API rate limit handling
 
-## Deployment Considerations
+## 🚀 Deployment Considerations
 
 ### Environment Setup
 - Python 3.11+ virtual environment
@@ -146,7 +160,7 @@ Bybit API → Position Cache → Analysis Pipeline → AI Decision → User Aler
 - Health check endpoints
 - Graceful shutdown handling
 
-## Known Challenges & Solutions
+## 🤔 Known Challenges & Solutions
 
 ### API Rate Limits
 - Implement request batching
@@ -166,10 +180,10 @@ Bybit API → Position Cache → Analysis Pipeline → AI Decision → User Aler
 - Conflict resolution strategies
 - Data validation layers
 
-## Previous Work Integration
+## 📚 Previous Work Integration
 Based on memory: Previous position analysis system exists with complete_position_analyzer.py and dashboard for 193+ symbols. Consider integrating existing work or building upon proven patterns.
 
-## Future Enhancements
+## 🔮 Future Enhancements
 - Backtesting module
 - Paper trading simulation
 - On-chain wallet analysis
