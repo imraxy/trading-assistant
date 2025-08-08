@@ -357,6 +357,186 @@
             </div>
         </div>
 
+        <!-- Chatbot Drawer Toggle -->
+        <button @click="ui.chatOpen = true" class="fixed bottom-6 right-6 bg-indigo-600 hover:bg-indigo-700 text-white rounded-full shadow-lg px-4 py-3 font-medium">
+            🤖 Chat
+        </button>
+
+        <!-- Chatbot Drawer -->
+        <div x-show="ui.chatOpen" class="fixed inset-0 bg-black/30" @click.self="ui.chatOpen=false"></div>
+        <aside x-show="ui.chatOpen" class="fixed right-0 top-0 h-full w-full sm:w-[420px] bg-white shadow-2xl border-l border-gray-200 flex flex-col" x-transition>
+            <div class="p-4 border-b flex items-center justify-between">
+                <div class="font-semibold">Assistant</div>
+                <button @click="ui.chatOpen=false" class="text-gray-500 hover:text-gray-700">✕</button>
+            </div>
+            <div class="flex-1 overflow-y-auto p-4 space-y-3" id="chat-scroll">
+                <template x-for="m in chat.messages" :key="m.id">
+                    <div :class="m.role==='user' ? 'text-right' : 'text-left'">
+                        <div :class="m.role==='user' ? 'inline-block bg-indigo-600 text-white' : 'inline-block bg-gray-100'" class="px-3 py-2 rounded-lg max-w-[90%] whitespace-pre-wrap" x-text="m.content"></div>
+                    </div>
+                </template>
+            </div>
+            <div class="p-3 border-t">
+                <form @submit.prevent="sendChat">
+                    <div class="flex gap-2">
+                        <input x-model="chat.input" placeholder="Ask about risk, profits, or a symbol..." class="flex-1 rounded-lg border border-gray-300 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+                        <button :disabled="chat.loading || !chat.input" class="bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white rounded-lg px-4 py-2">Send</button>
+                    </div>
+                </form>
+            </div>
+        </aside>
+
+        <!-- Positions Grid -->
+        <section class="mb-10">
+            <div class="flex items-center justify-between mb-4">
+                <h2 class="text-xl font-bold text-gray-900">📑 Positions</h2>
+                <div class="flex items-center gap-2">
+                    <label class="flex items-center gap-2 text-sm">
+                        <input type="checkbox" class="rounded border-gray-300" x-model="ui.groupBySymbol">
+                        <span>Group by symbol</span>
+                    </label>
+                    <label class="flex items-center gap-2 text-sm">
+                        <input type="checkbox" class="rounded border-gray-300" x-model="ui.showClosed">
+                        <span>Include closed</span>
+                    </label>
+                </div>
+            </div>
+
+            <!-- Controls -->
+            <div class="bg-white rounded-xl shadow p-4 mb-4">
+                <div class="grid grid-cols-1 md:grid-cols-4 gap-3">
+                    <div>
+                        <label class="block text-xs text-gray-500 mb-1">Search symbol</label>
+                        <input x-model.debounce.300ms="filters.search" placeholder="e.g. BTC, ETH" class="w-full rounded-lg border border-gray-300 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                    </div>
+                    <div>
+                        <label class="block text-xs text-gray-500 mb-1">Side</label>
+                        <select x-model="filters.side" class="w-full rounded-lg border border-gray-300 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500">
+                            <option value="">All</option>
+                            <option value="Buy">Long</option>
+                            <option value="Sell">Short</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-xs text-gray-500 mb-1">PnL % range</label>
+                        <div class="flex gap-2">
+                            <input type="number" x-model.number="filters.pnlMin" placeholder="min" class="w-full rounded-lg border border-gray-300 px-3 py-2">
+                            <input type="number" x-model.number="filters.pnlMax" placeholder="max" class="w-full rounded-lg border border-gray-300 px-3 py-2">
+                        </div>
+                    </div>
+                    <div>
+                        <label class="block text-xs text-gray-500 mb-1">Leverage range</label>
+                        <div class="flex gap-2">
+                            <input type="number" x-model.number="filters.levMin" placeholder="min" class="w-full rounded-lg border border-gray-300 px-3 py-2">
+                            <input type="number" x-model.number="filters.levMax" placeholder="max" class="w-full rounded-lg border border-gray-300 px-3 py-2">
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Grouped cards -->
+            <div x-show="ui.groupBySymbol" class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                <template x-for="group in groupedView" :key="group.symbol">
+                    <div class="rounded-xl bg-white shadow hover:shadow-lg transition p-4 border border-gray-100">
+                        <div class="flex items-center justify-between mb-2">
+                            <div class="flex items-center gap-2">
+                                <div class="w-8 h-8 rounded-lg bg-gray-100 flex items-center justify-center text-gray-700 font-semibold">$</div>
+                                <div>
+                                    <div class="font-semibold text-gray-900" x-text="group.symbol"></div>
+                                    <div class="text-xs text-gray-500" x-text="group.category"></div>
+                                </div>
+                            </div>
+                            <div class="text-right">
+                                <div class="text-sm font-semibold" :class="group.netPnL >= 0 ? 'text-green-600' : 'text-red-600'" x-text="formatCurrency(group.netPnL)"></div>
+                                <div class="text-xs text-gray-500">Net PnL</div>
+                            </div>
+                        </div>
+                        <div class="grid grid-cols-2 gap-2 text-xs mb-3">
+                            <div class="p-2 rounded bg-green-50 border border-green-100">
+                                <div class="text-[11px] text-gray-500">Longs</div>
+                                <div class="font-semibold text-green-700" x-text="group.long.count + ' pos'">0</div>
+                                <div class="text-gray-600" x-text="'Val ' + formatCurrency(group.long.value)"></div>
+                            </div>
+                            <div class="p-2 rounded bg-red-50 border border-red-100">
+                                <div class="text-[11px] text-gray-500">Shorts</div>
+                                <div class="font-semibold text-red-700" x-text="group.short.count + ' pos'">0</div>
+                                <div class="text-gray-600" x-text="'Val ' + formatCurrency(group.short.value)"></div>
+                            </div>
+                        </div>
+                        <div class="overflow-hidden rounded-lg border border-gray-100">
+                            <table class="min-w-full text-sm">
+                                <thead class="bg-gray-50 text-gray-500">
+                                    <tr>
+                                        <th class="px-2 py-1 text-left">Side</th>
+                                        <th class="px-2 py-1 text-right">Size</th>
+                                        <th class="px-2 py-1 text-right">Entry</th>
+                                        <th class="px-2 py-1 text-right">Price</th>
+                                        <th class="px-2 py-1 text-right">PnL</th>
+                                        <th class="px-2 py-1 text-right">PnL%</th>
+                                        <th class="px-2 py-1 text-right">Lev</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <template x-for="p in group.rows" :key="p.symbol + p.side + p.entry_price">
+                                        <tr class="border-t border-gray-100">
+                                            <td class="px-2 py-1">
+                                                <span class="px-2 py-0.5 rounded text-xs font-medium" :class="p.side === 'Buy' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'" x-text="p.side === 'Buy' ? 'Long' : 'Short'"></span>
+                                            </td>
+                                            <td class="px-2 py-1 text-right" x-text="p.size.toFixed(2)"></td>
+                                            <td class="px-2 py-1 text-right" x-text="p.entry_price.toFixed(4)"></td>
+                                            <td class="px-2 py-1 text-right" x-text="p.current_price.toFixed(4)"></td>
+                                            <td class="px-2 py-1 text-right" :class="p.unrealized_pnl>=0?'text-green-600':'text-red-600'" x-text="formatCurrency(p.unrealized_pnl)"></td>
+                                            <td class="px-2 py-1 text-right" :class="p.pnl_percentage>=0?'text-green-600':'text-red-600'" x-text="formatPercentage(p.pnl_percentage)"></td>
+                                            <td class="px-2 py-1 text-right" x-text="p.leverage.toFixed(0)+'x'"></td>
+                                        </tr>
+                                    </template>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </template>
+            </div>
+
+            <!-- Flat table -->
+            <div x-show="!ui.groupBySymbol" class="bg-white rounded-xl shadow overflow-hidden">
+                <div class="overflow-x-auto">
+                    <table class="min-w-full text-sm">
+                        <thead class="bg-gray-50 text-gray-600">
+                            <tr>
+                                <template x-for="col in columns" :key="col.key">
+                                    <th class="px-3 py-2 text-left whitespace-nowrap select-none cursor-pointer" @click="sortBy(col.key)">
+                                        <div class="flex items-center gap-1">
+                                            <span x-text="col.label"></span>
+                                            <span x-show="sort.key === col.key">{{</span>
+                                            <svg x-show="sort.key === col.key && sort.dir==='asc'" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="w-3 h-3"><path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 011.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z" clip-rule="evenodd" /></svg>
+                                            <svg x-show="sort.key === col.key && sort.dir==='desc'" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="w-3 h-3 rotate-180"><path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 011.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z" clip-rule="evenodd" /></svg>
+                                        </div>
+                                    </th>
+                                </template>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <template x-for="p in tableView" :key="p.symbol + p.side + p.entry_price">
+                                <tr class="border-t border-gray-100 hover:bg-gray-50">
+                                    <td class="px-3 py-2 font-medium" x-text="p.symbol"></td>
+                                    <td class="px-3 py-2">
+                                        <span class="px-2 py-0.5 rounded text-xs font-medium" :class="p.side === 'Buy' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'" x-text="p.side === 'Buy' ? 'Long' : 'Short'"></span>
+                                    </td>
+                                    <td class="px-3 py-2 text-right" x-text="p.size.toFixed(2)"></td>
+                                    <td class="px-3 py-2 text-right" x-text="p.entry_price.toFixed(4)"></td>
+                                    <td class="px-3 py-2 text-right" x-text="p.current_price.toFixed(4)"></td>
+                                    <td class="px-3 py-2 text-right" :class="p.unrealized_pnl>=0?'text-green-600':'text-red-600'" x-text="formatCurrency(p.unrealized_pnl)"></td>
+                                    <td class="px-3 py-2 text-right" :class="p.pnl_percentage>=0?'text-green-600':'text-red-600'" x-text="formatPercentage(p.pnl_percentage)"></td>
+                                    <td class="px-3 py-2 text-right" x-text="p.leverage.toFixed(0)+'x'"></td>
+                                    <td class="px-3 py-2 text-xs text-gray-500 whitespace-nowrap" x-text="p.updated_time ? new Date(Number(p.updated_time)).toLocaleString() : ''"></td>
+                                </tr>
+                            </template>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+
         <!-- Analytics Section -->
         <div class="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
             
@@ -519,12 +699,30 @@
                 analytics: {},
                 validationResults: null,
                 lastUpdate: null,
+                positions: [],
+                closed: [],
+                ui: { groupBySymbol: true, showClosed: false, chatOpen: false },
+                chat: { input: '', loading: false, messages: [] },
+                filters: { search: '', side: '', pnlMin: null, pnlMax: null, levMin: null, levMax: null },
+                sort: { key: 'symbol', dir: 'asc' },
+                columns: [
+                    { key: 'symbol', label: 'Symbol' },
+                    { key: 'side', label: 'Side' },
+                    { key: 'size', label: 'Size' },
+                    { key: 'entry_price', label: 'Entry' },
+                    { key: 'current_price', label: 'Price' },
+                    { key: 'unrealized_pnl', label: 'PnL $' },
+                    { key: 'pnl_percentage', label: 'PnL %' },
+                    { key: 'leverage', label: 'Lev' },
+                    { key: 'updated_time', label: 'Updated' },
+                ],
                 
                 // Initialize
                 async init() {
                     console.log('🚀 Initializing Comprehensive Portfolio Dashboard');
                     await this.checkConnection();
                     await this.refreshPortfolio();
+                    await this.loadPositions();
                 },
                 
                 // Connection check
@@ -564,6 +762,91 @@
                     } finally {
                         this.loading = false;
                     }
+                },
+
+                // Load positions
+                async loadPositions() {
+                    try {
+                        const [openRes, closedRes] = await Promise.all([
+                            fetch('/api/v1/positions'),
+                            fetch('/api/v1/positions/closed')
+                        ]);
+                        const open = await openRes.json();
+                        const closed = await closedRes.json();
+                        this.positions = (open.status === 'success' ? open.positions : []) || [];
+                        this.closed = (closed.status === 'success' ? closed.closed : []) || [];
+                    } catch (e) {
+                        console.warn('Positions load failed', e);
+                        this.positions = [];
+                        this.closed = [];
+                    }
+                },
+
+                async sendChat() {
+                    const text = (this.chat.input || '').trim();
+                    if (!text) return;
+                    this.chat.messages.push({ id: Date.now()+':u', role: 'user', content: text });
+                    this.chat.input = '';
+                    this.chat.loading = true;
+                    try {
+                        const res = await fetch('/api/v1/chat/ask', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ question: text }) });
+                        const data = await res.json();
+                        const answer = data?.answer || data?.error || 'No response';
+                        this.chat.messages.push({ id: Date.now()+':a', role: 'assistant', content: answer });
+                        this.$nextTick(() => {
+                            const el = document.getElementById('chat-scroll'); el && (el.scrollTop = el.scrollHeight);
+                        });
+                    } catch (e) {
+                        this.chat.messages.push({ id: Date.now()+':a', role: 'assistant', content: 'Error: '+e.message });
+                    } finally {
+                        this.chat.loading = false;
+                    }
+                },
+
+                // Sorting
+                sortBy(key) {
+                    if (this.sort.key === key) {
+                        this.sort.dir = this.sort.dir === 'asc' ? 'desc' : 'asc';
+                    } else {
+                        this.sort.key = key;
+                        this.sort.dir = 'asc';
+                    }
+                },
+
+                // Derived flat table view
+                get tableView() {
+                    let rows = [...this.positions];
+                    // Filters
+                    const s = (this.filters.search || '').toUpperCase();
+                    if (s) rows = rows.filter(r => (r.symbol || '').toUpperCase().includes(s));
+                    if (this.filters.side) rows = rows.filter(r => r.side === this.filters.side);
+                    if (this.filters.pnlMin != null) rows = rows.filter(r => r.pnl_percentage >= this.filters.pnlMin);
+                    if (this.filters.pnlMax != null) rows = rows.filter(r => r.pnl_percentage <= this.filters.pnlMax);
+                    if (this.filters.levMin != null) rows = rows.filter(r => (r.leverage || 0) >= this.filters.levMin);
+                    if (this.filters.levMax != null) rows = rows.filter(r => (r.leverage || 0) <= this.filters.levMax);
+                    // Sort
+                    const k = this.sort.key; const dir = this.sort.dir === 'asc' ? 1 : -1;
+                    rows.sort((a,b) => {
+                        const va = (a[k] ?? 0); const vb = (b[k] ?? 0);
+                        if (typeof va === 'string' || typeof vb === 'string') return String(va).localeCompare(String(vb)) * dir;
+                        return (va - vb) * dir;
+                    });
+                    return rows;
+                },
+
+                // Grouped view by symbol
+                get groupedView() {
+                    const rows = this.tableView; // already filtered/sorted
+                    const map = {};
+                    for (const p of rows) {
+                        const key = p.symbol || 'UNKNOWN';
+                        if (!map[key]) map[key] = { symbol: key, category: p.category || 'linear', rows: [], long:{count:0,value:0}, short:{count:0,value:0}, netPnL:0 };
+                        map[key].rows.push(p);
+                        if (p.side === 'Buy') { map[key].long.count++; map[key].long.value += (p.position_value||0); }
+                        else { map[key].short.count++; map[key].short.value += (p.position_value||0); }
+                        map[key].netPnL += (p.unrealized_pnl || 0);
+                    }
+                    return Object.values(map);
                 },
                 
                 // Validate portfolio calculations
