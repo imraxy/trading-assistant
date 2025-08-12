@@ -80,12 +80,13 @@ class BybitService:
         """Test API connection and credentials"""
         try:
             # Sign GET with empty params
-            query_string = urlencode(sorted({"accountType": "UNIFIED"}.items()))
+            params_items = sorted({"accountType": "UNIFIED"}.items())
+            query_string = urlencode(params_items)
             headers = self._get_headers(query_string)
             response = await self.client.get(
                 f"{self.base_url}/v5/account/wallet-balance",
                 headers=headers,
-                params={"accountType": "UNIFIED"}
+                params=params_items
             )
             
             if response.status_code == 200:
@@ -128,15 +129,17 @@ class BybitService:
                 cursor: Optional[str] = None
                 while True:
                     params_dict: Dict[str, Any] = {k: v for k, v in base_params.items() if v is not None}
+                    params_dict["limit"] = 200
                     if cursor:
                         params_dict["cursor"] = cursor
-                    
-                    query_string = urlencode(sorted(params_dict.items()))
+                    # Ensure signing order matches transmitted order
+                    params_items = sorted(params_dict.items())
+                    query_string = urlencode(params_items)
                     headers = self._get_headers(query_string)
                     response = await self.client.get(
                         f"{self.base_url}/v5/position/list",
                         headers=headers,
-                        params=params_dict,
+                        params=params_items,
                     )
                     
                     if response.status_code != 200:
@@ -204,12 +207,13 @@ class BybitService:
         """Get account information and wallet balance"""
         try:
             params = {"accountType": "UNIFIED"}
-            query_string = urlencode(sorted(params.items()))
+            params_items = sorted(params.items())
+            query_string = urlencode(params_items)
             headers = self._get_headers(query_string)
             response = await self.client.get(
                 f"{self.base_url}/v5/account/wallet-balance",
                 headers=headers,
-                params=params,
+                params=params_items,
             )
             
             if response.status_code == 200:
@@ -303,12 +307,13 @@ class BybitService:
                     if cursor:
                         params["cursor"] = cursor
                     
-                    query_string = urlencode(sorted(params.items()))
+                    params_items = sorted(params.items())
+                    query_string = urlencode(params_items)
                     headers = self._get_headers(query_string)
                     response = await self.client.get(
                         f"{self.base_url}/v5/position/closed-pnl",
                         headers=headers,
-                        params=params,
+                        params=params_items,
                     )
                     if response.status_code != 200:
                         logger.error(f"HTTP error closed-pnl {base_params['category']}: {response.status_code} {response.text}")
