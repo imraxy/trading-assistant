@@ -1035,13 +1035,13 @@
                         },
                         // Keep Long/Short pairs adjacent by ALWAYS prefixing sort by symbol then side
                         onSortChanged: (e) => {
-                            const current = e.api.getSortModel();
+                            const current = e.api.getGridOption('sortModel') || [];
                             const hasSymbolFirst = current.length > 0 && current[0].colId === 'symbol' && current[0].sort === 'asc';
                             const hasSide = current.some(m => m.colId === 'side');
                             if (hasSymbolFirst && hasSide) return; // already enforced
                             const others = current.filter(m => m.colId !== 'symbol' && m.colId !== 'side');
                             const model = [{ colId: 'symbol', sort: 'asc' }, ...others, { colId: 'side', sort: 'asc' }];
-                            e.api.setSortModel(model);
+                            e.api.setGridOption('sortModel', model);
                         },
                     };
 
@@ -1049,7 +1049,7 @@
                     gridDiv.innerHTML = '';
                     this.ag.api = agGrid.createGrid(gridDiv, gridOptions);
                     // Ensure initial enforced sort model
-                    this.ag.api.setSortModel([{ colId: 'symbol', sort: 'asc' }, { colId: 'side', sort: 'asc' }]);
+                    this.ag.api.setGridOption('sortModel', [{ colId: 'symbol', sort: 'asc' }, { colId: 'side', sort: 'asc' }]);
                     if (this.ag.quickFilter) this.ag.api.setGridOption('quickFilterText', this.ag.quickFilter);
                 },
 
