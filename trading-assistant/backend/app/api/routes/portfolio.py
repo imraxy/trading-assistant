@@ -182,38 +182,45 @@ async def get_portfolio_analytics() -> Dict[str, Any]:
 
 @router.get("/changes")
 async def get_changes(symbol: str | None = None) -> Dict[str, Any]:
-    """Get change in PnL%/value over last 1h/1d/1w using stored snapshots."""
+    """Get change in PnL% over last 1h/1d/1w per (symbol, side).
+    Logic: for each window, pick earliest and latest snapshots for the same
+    symbol+side within [now-window, now], then compute latest.pnl% - earliest.pnl%.
+    """
     try:
         db = SessionLocal()
-        now = func.now()
-        rows = {}
+        from datetime import datetime, timedelta
+        now_py = datetime.utcnow()
         windows = {
-            "1h": func.datetime(func.datetime(now, '-0 second'), '-1 hour'),
-            "1d": func.datetime(func.datetime(now, '-0 second'), '-1 day'),
-            "1w": func.datetime(func.datetime(now, '-0 second'), '-7 day'),
+            "1h": now_py - timedelta(hours=1),
+            "1d": now_py - timedelta(days=1),
+            "1w": now_py - timedelta(days=7),
         }
-        for label, since in windows.items():
-            stmt = select(db_models.PositionSnapshot).where(db_models.PositionSnapshot.captured_at >= since)
+        out: Dict[str, Dict[str, Dict[str, float]]] = {}
+        for label, since_py in windows.items():
+            stmt = select(db_models.PositionSnapshot).where(db_models.PositionSnapshot.captured_at >= since_py)
             if symbol:
                 stmt = stmt.where(db_models.PositionSnapshot.symbol == symbol)
-            stmt = stmt.order_by(db_models.PositionSnapshot.captured_at.desc())
+            stmt = stmt.order_by(db_models.PositionSnapshot.symbol.asc(), db_models.PositionSnapshot.side.asc(), db_models.PositionSnapshot.captured_at.asc())
             result = db.execute(stmt).scalars().all()
-            # Compute deltas by symbol comparing first vs last in window
-            symbol_to_rows = {}
+            # Group by (symbol, side)
+            groups: Dict[tuple, list] = {}
             for r in result:
-                symbol_to_rows.setdefault(r.symbol, []).append(r)
+                key = (r.symbol, r.side)
+                groups.setdefault(key, []).append(r)
             deltas = {}
-            for sym, items in symbol_to_rows.items():
+            for (sym, side), items in groups.items():
                 if len(items) < 2:
                     continue
-                latest, oldest = items[0], items[-1]
-                deltas[sym] = {
-                    "pnl_pct_change": (latest.pnl_percentage - oldest.pnl_percentage),
+                oldest = items[0]
+                latest = items[-1]
+                d = (latest.pnl_percentage - oldest.pnl_percentage)
+                deltas.setdefault(sym, {})[side] = {
+                    "pnl_pct_change": d,
                     "pnl_usd_change": (latest.unrealized_pnl - oldest.unrealized_pnl),
                     "price_change": (latest.current_price - oldest.current_price),
                 }
-            rows[label] = deltas
-        return {"status": "success", "data": rows}
+            out[label] = deltas
+        return {"status": "success", "data": out}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
     finally:

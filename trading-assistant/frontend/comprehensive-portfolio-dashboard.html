@@ -965,6 +965,21 @@
 
                 renderAgGrid() {
                     if (!window.agGrid) { console.warn('AG Grid not ready'); return; }
+                    // Build row model with grouping key; map deltas by symbol+side
+                    const changesKeyed = (label) => {
+                        const bucket = this.changes[label] || {};
+                        const out = {};
+                        Object.keys(bucket).forEach(sym => {
+                            const entry = bucket[sym];
+                            if (entry.Buy) out[`${sym}|Buy`] = entry.Buy;
+                            if (entry.Sell) out[`${sym}|Sell`] = entry.Sell;
+                        });
+                        return out;
+                    };
+                    const d1h = changesKeyed('1h');
+                    const d1d = changesKeyed('1d');
+                    const d1w = changesKeyed('1w');
+
                     const rows = this.tableView.map(p => ({
                         symbol: p.symbol,
                         side: p.side,
@@ -974,16 +989,19 @@
                         pnlUsd: p.unrealized_pnl,
                         pnlPct: p.pnl_percentage,
                         lev: p.leverage,
-                        d1h: (this.changes['1h'][p.symbol]?.pnl_pct_change ?? 0),
-                        d1d: (this.changes['1d'][p.symbol]?.pnl_pct_change ?? 0),
-                        d1w: (this.changes['1w'][p.symbol]?.pnl_pct_change ?? 0),
+                        d1h: (d1h[`${p.symbol}|${p.side}`]?.pnl_pct_change ?? 0),
+                        d1d: (d1d[`${p.symbol}|${p.side}`]?.pnl_pct_change ?? 0),
+                        d1w: (d1w[`${p.symbol}|${p.side}`]?.pnl_pct_change ?? 0),
+                        groupKey: p.symbol,
                     }));
 
                     const usd = v => new Intl.NumberFormat('en-US', { style:'currency', currency:'USD', minimumFractionDigits:2 }).format(v||0);
                     const pct = v => `${(v ?? 0).toFixed(2)}%`;
                     const columnDefs = [
-                        { field: 'symbol', filter: 'agTextColumnFilter', floatingFilter: true, minWidth: 140 },
-                        { field: 'side', filter: 'agTextColumnFilter', floatingFilter: true, width: 90 },
+                        { field: 'symbol', filter: 'agTextColumnFilter', floatingFilter: true, minWidth: 140, rowGroup: true, hide: true },
+                        { field: 'side', headerName: 'Side', filter: 'agTextColumnFilter', floatingFilter: true, width: 100,
+                          valueFormatter: p=> (p.value==='Buy' ? 'Long' : 'Short'),
+                          cellClass: p=> p.value==='Buy' ? 'bg-green-50' : 'bg-red-50' },
                         { field: 'valueUsd', headerName: 'Value $', type: 'rightAligned', filter: 'agNumberColumnFilter', floatingFilter: true, valueFormatter: p=> usd(p.value) },
                         { field: 'entry', headerName: 'Entry', type: 'rightAligned', filter: 'agNumberColumnFilter', floatingFilter: true, valueFormatter: p=> (p.value ?? 0).toFixed(4) },
                         { field: 'price', headerName: 'Price', type: 'rightAligned', filter: 'agNumberColumnFilter', floatingFilter: true, valueFormatter: p=> (p.value ?? 0).toFixed(4) },
@@ -1006,6 +1024,8 @@
                         animateRows: true,
                         rowHeight: 34,
                         suppressDragLeaveHidesColumns: true,
+                        groupDisplayType: 'groupRows',
+                        groupDefaultExpanded: -1,
                         defaultColDef: {
                             resizable: true,
                             sortable: true,
