@@ -7,6 +7,10 @@
     <script src="https://unpkg.com/alpinejs@3.x.x/dist/cdn.min.js" defer></script>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+        <!-- AG Grid Community -->
+        <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/ag-grid-community@31.3.3/styles/ag-grid.css" />
+        <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/ag-grid-community@31.3.3/styles/ag-theme-alpine.css" />
+        <script src="https://cdn.jsdelivr.net/npm/ag-grid-community@31.3.3/dist/ag-grid-community.min.js"></script>
     <style>
         .portfolio-card {
             transition: all 0.3s ease;
@@ -619,6 +623,18 @@
             </div>
         </section>
 
+            <!-- Advanced Data Grid (AG Grid) -->
+            <section class="mb-10">
+                <div class="flex items-center justify-between mb-2">
+                    <h2 class="text-xl font-bold text-gray-900">📊 Advanced Data Grid</h2>
+                    <div class="flex items-center gap-2">
+                        <input x-model.debounce.300ms="ag.quickFilter" @input="ag.api && ag.api.setQuickFilter(ag.quickFilter)" placeholder="Quick search..." class="rounded-lg border border-gray-300 px-3 py-2" />
+                        <button @click="renderAgGrid()" class="bg-blue-600 hover:bg-blue-700 text-white px-3 py-2 rounded">Render/Refresh</button>
+                    </div>
+                </div>
+                <div class="ag-theme-alpine rounded-xl shadow" style="height: 540px; width: 100%;" x-ref="agGrid"></div>
+            </section>
+
         <!-- Analytics Section -->
         <div class="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
             
@@ -787,6 +803,7 @@
                 chat: { input: '', loading: false, messages: [] },
                 debug: { lastSnapshot: null, lastLogs: [], latest: null },
                 changes: { '1h': {}, '1d': {}, '1w': {} },
+                ag: { api: null, quickFilter: '' },
                 
                 filters: { search: '', side: '', pnlMin: null, pnlMax: null, levMin: null, levMax: null },
                 sort: { key: 'symbol', dir: 'asc' },
@@ -936,6 +953,52 @@
                     const v = obj.pnl_pct_change ?? 0;
                     const cls = v >= 0 ? 'text-green-600' : 'text-red-600';
                     return `${v.toFixed(2)}%`;
+                },
+
+                renderAgGrid() {
+                    const rows = this.tableView.map(p => ({
+                        symbol: p.symbol,
+                        side: p.side,
+                        size: p.size,
+                        entry: p.entry_price,
+                        price: p.current_price,
+                        pnlUsd: p.unrealized_pnl,
+                        pnlPct: p.pnl_percentage,
+                        lev: p.leverage,
+                        d1h: (this.changes['1h'][p.symbol]?.pnl_pct_change ?? 0),
+                        d1d: (this.changes['1d'][p.symbol]?.pnl_pct_change ?? 0),
+                        d1w: (this.changes['1w'][p.symbol]?.pnl_pct_change ?? 0),
+                    }));
+
+                    const columnDefs = [
+                        { field: 'symbol', filter: true, sortable: true },
+                        { field: 'side', filter: true, sortable: true },
+                        { field: 'size', headerName: 'Size', type: 'rightAligned', valueFormatter: p=> (p.value ?? 0).toFixed(2), sortable: true },
+                        { field: 'entry', headerName: 'Entry', type: 'rightAligned', valueFormatter: p=> (p.value ?? 0).toFixed(4), sortable: true },
+                        { field: 'price', headerName: 'Price', type: 'rightAligned', valueFormatter: p=> (p.value ?? 0).toFixed(4), sortable: true },
+                        { field: 'pnlUsd', headerName: 'PnL $', type: 'rightAligned', valueFormatter: p=> new Intl.NumberFormat('en-US', { style:'currency', currency:'USD', minimumFractionDigits:2 }).format(p.value||0), sortable: true },
+                        { field: 'pnlPct', headerName: 'PnL %', type: 'rightAligned', valueFormatter: p=> `${(p.value ?? 0).toFixed(2)}%`, sortable: true },
+                        { field: 'lev', headerName: 'Lev', type: 'rightAligned', valueFormatter: p=> `${(p.value ?? 0).toFixed(0)}x`, sortable: true },
+                        { field: 'd1h', headerName: 'Δ 1h', type: 'rightAligned', valueFormatter: p=> `${(p.value ?? 0).toFixed(2)}%`, sortable: true },
+                        { field: 'd1d', headerName: 'Δ 1d', type: 'rightAligned', valueFormatter: p=> `${(p.value ?? 0).toFixed(2)}%`, sortable: true },
+                        { field: 'd1w', headerName: 'Δ 1w', type: 'rightAligned', valueFormatter: p=> `${(p.value ?? 0).toFixed(2)}%`, sortable: true },
+                    ];
+
+                    const gridOptions = {
+                        columnDefs,
+                        rowData: rows,
+                        animateRows: true,
+                        defaultColDef: {
+                            resizable: true,
+                            sortable: true,
+                            filter: true,
+                        },
+                    };
+
+                    const gridDiv = this.$refs.agGrid;
+                    gridDiv.innerHTML = '';
+                    this.ag.api = agGrid.createGrid(gridDiv, gridOptions);
+                    if (this.ag.quickFilter) this.ag.api.setQuickFilter(this.ag.quickFilter);
                 },
 
                 async sendChat() {
