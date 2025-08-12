@@ -5,6 +5,10 @@ Provides comprehensive browser automation endpoints
 
 import logging
 from typing import Dict, Any, Optional
+from pathlib import Path
+import uuid
+import json
+import base64
 from fastapi import APIRouter, HTTPException, Request, Depends
 from pydantic import BaseModel, Field
 
@@ -62,6 +66,8 @@ class SnapshotRequest(BaseModel):
     url: str
     page_id: str = Field(default="assistant", description="Page identifier")
     full_page: bool = False
+    save: bool = True
+    label: Optional[str] = None
 
 
 def get_browser_service(request: Request):
@@ -269,6 +275,10 @@ async def evaluate_javascript(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+SNAPSHOT_DIR = Path("logs") / "snapshots"
+SNAPSHOT_DIR.mkdir(parents=True, exist_ok=True)
+
+
 @router.post("/browser/snapshot")
 async def capture_snapshot(
     request: SnapshotRequest,
@@ -280,13 +290,97 @@ async def capture_snapshot(
             url=request.url, page_id=request.page_id, full_page=request.full_page
         )
         if result.get("success"):
-            return {"status": "success", "data": result}
+            snapshot_id = None
+            if request.save:
+                snapshot_id = uuid.uuid4().hex
+                snap_dir = SNAPSHOT_DIR / snapshot_id
+                snap_dir.mkdir(parents=True, exist_ok=True)
+                # Write image
+                try:
+                    img_b = base64.b64decode(result.get("image", ""))
+                    (snap_dir / "snapshot.png").write_bytes(img_b)
+                except Exception:
+                    pass
+                # Write logs and meta
+                (snap_dir / "logs.json").write_text(json.dumps(result.get("logs", []), ensure_ascii=False))
+                meta = {
+                    "id": snapshot_id,
+                    "label": request.label,
+                    "captured_at": result.get("info", {}).get("timestamp") or result.get("info", {}).get("title"),
+                    "page_info": result.get("info", {}),
+                    "url": request.url,
+                }
+                (snap_dir / "meta.json").write_text(json.dumps(meta, ensure_ascii=False))
+                # Update latest pointer
+                (SNAPSHOT_DIR / "latest.txt").write_text(snapshot_id)
+
+            payload = {"status": "success", "data": result}
+            if snapshot_id:
+                payload["snapshot"] = {
+                    "id": snapshot_id,
+                    "image_url": f"/api/v1/browser/snapshot/{snapshot_id}",
+                    "logs_url": f"/api/v1/browser/snapshot/{snapshot_id}/logs",
+                }
+            return payload
         raise HTTPException(status_code=400, detail=result.get("error", "Snapshot failed"))
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"Snapshot failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/browser/snapshot/{snapshot_id}")
+async def get_snapshot_image(snapshot_id: str):
+    """Get stored snapshot image (PNG)"""
+    from fastapi.responses import FileResponse
+    file_path = SNAPSHOT_DIR / snapshot_id / "snapshot.png"
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="Snapshot not found")
+    return FileResponse(str(file_path), media_type="image/png")
+
+
+@router.get("/browser/snapshot/{snapshot_id}/logs")
+async def get_snapshot_logs(snapshot_id: str) -> Dict[str, Any]:
+    file_path = SNAPSHOT_DIR / snapshot_id / "logs.json"
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="Snapshot logs not found")
+    try:
+        logs = json.loads(file_path.read_text())
+    except Exception:
+        logs = []
+    return {"status": "success", "logs": logs}
+
+
+@router.get("/browser/snapshot/latest")
+async def get_latest_snapshot() -> Dict[str, Any]:
+    latest_file = SNAPSHOT_DIR / "latest.txt"
+    if latest_file.exists():
+        sid = latest_file.read_text().strip()
+        return {
+            "status": "success",
+            "snapshot": {
+                "id": sid,
+                "image_url": f"/api/v1/browser/snapshot/{sid}",
+                "logs_url": f"/api/v1/browser/snapshot/{sid}/logs",
+            },
+        }
+    # Fallback to most recent directory
+    try:
+        sids = sorted([p.name for p in SNAPSHOT_DIR.iterdir() if p.is_dir()], reverse=True)
+        if sids:
+            sid = sids[0]
+            return {
+                "status": "success",
+                "snapshot": {
+                    "id": sid,
+                    "image_url": f"/api/v1/browser/snapshot/{sid}",
+                    "logs_url": f"/api/v1/browser/snapshot/{sid}/logs",
+                },
+            }
+    except Exception:
+        pass
+    raise HTTPException(status_code=404, detail="No snapshots found")
 
 
 @router.get("/browser/info")

@@ -100,7 +100,7 @@
                         </button>
                         
                         <!-- Snapshot for assistant -->
-                        <button @click="captureSnapshot()"
+                        <button @click="captureSnapshot(true)"
                                 class="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg text-sm font-medium">
                             Snapshot
                         </button>
@@ -789,17 +789,20 @@
                     }
                 },
 
-                async captureSnapshot() {
+                async captureSnapshot(save = false) {
                     try {
                         const res = await fetch('/api/v1/browser/snapshot', {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ url: window.location.href, page_id: 'assistant', full_page: true })
+                            body: JSON.stringify({ url: window.location.href, page_id: 'assistant', full_page: true, save })
                         });
                         const data = await res.json();
                         if (data.status === 'success') {
                             this.debug.lastSnapshot = data.data.image;
                             this.debug.lastLogs = data.data.logs || [];
+                            if (data.snapshot) {
+                                console.log('Snapshot URLs:', data.snapshot);
+                            }
                             console.log('Snapshot captured. Logs:', this.debug.lastLogs);
                         } else {
                             console.error('Snapshot failed', data);
