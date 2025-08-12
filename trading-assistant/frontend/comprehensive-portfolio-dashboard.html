@@ -7,10 +7,10 @@
     <script src="https://unpkg.com/alpinejs@3.x.x/dist/cdn.min.js" defer></script>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-        <!-- AG Grid Community -->
-        <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/ag-grid-community@31.3.3/styles/ag-grid.css" />
-        <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/ag-grid-community@31.3.3/styles/ag-theme-alpine.css" />
-        <script src="https://cdn.jsdelivr.net/npm/ag-grid-community@31.3.3/dist/ag-grid-community.min.js"></script>
+        <!-- AG Grid Community (UMD build) -->
+        <link rel="stylesheet" href="https://unpkg.com/ag-grid-community/styles/ag-grid.css" />
+        <link rel="stylesheet" href="https://unpkg.com/ag-grid-community/styles/ag-theme-alpine.css" />
+        <script src="https://unpkg.com/ag-grid-community/dist/ag-grid-community.min.js" defer></script>
     <style>
         .portfolio-card {
             transition: all 0.3s ease;
@@ -61,6 +61,7 @@
         .correlation-strong { color: #dc2626; }
         .correlation-moderate { color: #f59e0b; }
         .correlation-weak { color: #10b981; }
+        .hidden-legacy { display: none !important; }
     </style>
 </head>
 <body class="bg-gray-50 min-h-screen" x-data="comprehensivePortfolio()">
@@ -121,9 +122,24 @@
 
     <!-- Main Content -->
     <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <!-- Advanced Data Grid (Top) -->
+        <section class="mb-10">
+            <div class="flex items-center justify-between mb-2">
+                <h2 class="text-xl font-bold text-gray-900">📊 Advanced Data Grid</h2>
+                <div class="flex items-center gap-2">
+                    <input x-model.debounce.300ms="ag.quickFilter" @input="ag.api && ag.api.setQuickFilter(ag.quickFilter)" placeholder="Quick search..." class="rounded-lg border border-gray-300 px-3 py-2" />
+                    <button @click="exportCsv()" class="bg-slate-600 hover:bg-slate-700 text-white px-3 py-2 rounded">Export CSV</button>
+                    <button @click="resetFilters()" class="bg-slate-100 hover:bg-slate-200 px-3 py-2 rounded">Reset</button>
+                    <button @click="toggleSide('Buy')" class="bg-green-100 hover:bg-green-200 px-3 py-2 rounded">Long</button>
+                    <button @click="toggleSide('Sell')" class="bg-red-100 hover:bg-red-200 px-3 py-2 rounded">Short</button>
+                    <button @click="renderAgGrid()" class="bg-blue-600 hover:bg-blue-700 text-white px-3 py-2 rounded">Render/Refresh</button>
+                </div>
+            </div>
+            <div class="ag-theme-alpine rounded-xl shadow" style="height: 560px; width: 100%;" x-ref="agGridTop"></div>
+        </section>
         
-        <!-- Portfolio Summary Cards -->
-        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+        <!-- Portfolio Summary Cards (hidden while grid UX is built) -->
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8 hidden-legacy">
             <!-- Total Portfolio Value -->
             <div class="portfolio-card bg-white rounded-xl shadow-lg p-6">
                 <div class="flex items-center justify-between">
@@ -205,8 +221,8 @@
             </div>
         </div>
 
-        <!-- Validation Status -->
-        <div x-show="validationResults && validationResults.validation_results" class="mb-8">
+        <!-- Validation Status (hidden) -->
+        <div x-show="false" class="mb-8 hidden-legacy">
             <div class="portfolio-card rounded-xl shadow-lg p-6"
                  :class="getValidationClass(validationResults?.validation_results?.is_valid)">
                 <div class="flex items-center justify-between">
@@ -241,8 +257,8 @@
             </div>
         </div>
 
-        <!-- Long vs Short Positions -->
-        <div class="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
+        <!-- Long vs Short Positions (hidden) -->
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8 hidden-legacy">
             
             <!-- Long Positions Section -->
             <div class="long-position rounded-xl shadow-lg p-6">
@@ -433,8 +449,8 @@
                 </div>
             </div>
 
-            <!-- Positions Grid -->
-        <section class="mb-10">
+        <!-- Positions Grid (hidden in favor of AG Grid) -->
+        <section class="mb-10 hidden-legacy">
             <div class="flex items-center justify-between mb-4">
                 <h2 class="text-xl font-bold text-gray-900">📑 Positions</h2>
                 <div class="flex items-center gap-2">
@@ -623,20 +639,10 @@
             </div>
         </section>
 
-            <!-- Advanced Data Grid (AG Grid) -->
-            <section class="mb-10">
-                <div class="flex items-center justify-between mb-2">
-                    <h2 class="text-xl font-bold text-gray-900">📊 Advanced Data Grid</h2>
-                    <div class="flex items-center gap-2">
-                        <input x-model.debounce.300ms="ag.quickFilter" @input="ag.api && ag.api.setQuickFilter(ag.quickFilter)" placeholder="Quick search..." class="rounded-lg border border-gray-300 px-3 py-2" />
-                        <button @click="renderAgGrid()" class="bg-blue-600 hover:bg-blue-700 text-white px-3 py-2 rounded">Render/Refresh</button>
-                    </div>
-                </div>
-                <div class="ag-theme-alpine rounded-xl shadow" style="height: 540px; width: 100%;" x-ref="agGrid"></div>
-            </section>
+            <!-- Legacy placeholder removed -->
 
-        <!-- Analytics Section -->
-        <div class="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
+        <!-- Analytics Section (hidden) -->
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8 hidden-legacy">
             
             <!-- Performance Analytics -->
             <div class="analytics-card bg-white rounded-xl shadow-lg p-6">
@@ -703,8 +709,8 @@
             </div>
         </div>
 
-        <!-- Sector Allocation & Recommendations -->
-        <div class="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
+        <!-- Sector Allocation & Recommendations (hidden) -->
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8 hidden-legacy">
             
             <!-- Sector Allocation -->
             <div class="analytics-card bg-white rounded-xl shadow-lg p-6">
@@ -825,6 +831,8 @@
                     await this.checkConnection();
                     await this.refreshPortfolio();
                     await this.loadPositions();
+                    await this.loadChanges();
+                    this.$nextTick(() => this.renderAgGrid());
                 },
                 
                 // Connection check
@@ -956,6 +964,7 @@
                 },
 
                 renderAgGrid() {
+                    if (!window.agGrid) { console.warn('AG Grid not ready'); return; }
                     const rows = this.tableView.map(p => ({
                         symbol: p.symbol,
                         side: p.side,
@@ -995,10 +1004,27 @@
                         },
                     };
 
-                    const gridDiv = this.$refs.agGrid;
+                    const gridDiv = this.$refs.agGridTop || this.$refs.agGrid;
                     gridDiv.innerHTML = '';
                     this.ag.api = agGrid.createGrid(gridDiv, gridOptions);
                     if (this.ag.quickFilter) this.ag.api.setQuickFilter(this.ag.quickFilter);
+                },
+
+                exportCsv() {
+                    if (this.ag.api) this.ag.api.exportDataAsCsv({ fileName: 'positions.csv' });
+                },
+                resetFilters() {
+                    if (this.ag.api) {
+                        this.ag.api.setFilterModel(null);
+                        this.ag.api.setQuickFilter('');
+                        this.ag.quickFilter='';
+                    }
+                },
+                toggleSide(side) {
+                    if (!this.ag.api) return;
+                    const fm = this.ag.api.getFilterModel() || {};
+                    fm.side = { type: 'equals', filter: side };
+                    this.ag.api.setFilterModel(fm);
                 },
 
                 async sendChat() {
