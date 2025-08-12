@@ -998,10 +998,10 @@
                     const usd = v => new Intl.NumberFormat('en-US', { style:'currency', currency:'USD', minimumFractionDigits:2 }).format(v||0);
                     const pct = v => `${(v ?? 0).toFixed(2)}%`;
                     const columnDefs = [
-                        { field: 'symbol', filter: 'agTextColumnFilter', floatingFilter: true, minWidth: 140, rowGroup: true, hide: true },
+                        { field: 'symbol', headerName: 'Symbol', filter: 'agTextColumnFilter', floatingFilter: true, minWidth: 140, sort: 'asc', sortIndex: 0 },
                         { field: 'side', headerName: 'Side', filter: 'agTextColumnFilter', floatingFilter: true, width: 100,
                           valueFormatter: p=> (p.value==='Buy' ? 'Long' : 'Short'),
-                          cellClass: p=> p.value==='Buy' ? 'bg-green-50' : 'bg-red-50' },
+                          cellClass: p=> p.value==='Buy' ? 'bg-green-50' : 'bg-red-50', sort: 'asc', sortIndex: 1 },
                         { field: 'valueUsd', headerName: 'Value $', type: 'rightAligned', filter: 'agNumberColumnFilter', floatingFilter: true, valueFormatter: p=> usd(p.value) },
                         { field: 'entry', headerName: 'Entry', type: 'rightAligned', filter: 'agNumberColumnFilter', floatingFilter: true, valueFormatter: p=> (p.value ?? 0).toFixed(4) },
                         { field: 'price', headerName: 'Price', type: 'rightAligned', filter: 'agNumberColumnFilter', floatingFilter: true, valueFormatter: p=> (p.value ?? 0).toFixed(4) },
@@ -1024,8 +1024,6 @@
                         animateRows: true,
                         rowHeight: 34,
                         suppressDragLeaveHidesColumns: true,
-                        groupDisplayType: 'groupRows',
-                        groupDefaultExpanded: -1,
                         defaultColDef: {
                             resizable: true,
                             sortable: true,
