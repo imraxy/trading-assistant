@@ -1033,23 +1033,25 @@
                             flex: 1,
                             minWidth: 110,
                         },
-                        // Keep Long/Short pairs adjacent by ALWAYS prefixing sort by symbol then side
-                        onSortChanged: (e) => {
-                            const current = e.api.getGridOption('sortModel') || [];
-                            const hasSymbolFirst = current.length > 0 && current[0].colId === 'symbol' && current[0].sort === 'asc';
-                            const hasSide = current.some(m => m.colId === 'side');
-                            if (hasSymbolFirst && hasSide) return; // already enforced
-                            const others = current.filter(m => m.colId !== 'symbol' && m.colId !== 'side');
-                            const model = [{ colId: 'symbol', sort: 'asc' }, ...others, { colId: 'side', sort: 'asc' }];
-                            e.api.setGridOption('sortModel', model);
+                        // Keep Long/Short pairs adjacent regardless of user sort using postSortRows
+                        postSortRows: (params) => {
+                            const sideRank = (s) => (s === 'Buy' ? 0 : 1);
+                            params.nodes.sort((a, b) => {
+                                const sa = (a.data?.symbol || '').toUpperCase();
+                                const sb = (b.data?.symbol || '').toUpperCase();
+                                if (sa !== sb) return sa.localeCompare(sb);
+                                const ra = sideRank(a.data?.side);
+                                const rb = sideRank(b.data?.side);
+                                if (ra !== rb) return ra - rb;
+                                return 0; // preserve internal order from current sort
+                            });
                         },
                     };
 
                     const gridDiv = this.$refs.agGridTop || this.$refs.agGrid;
                     gridDiv.innerHTML = '';
                     this.ag.api = agGrid.createGrid(gridDiv, gridOptions);
-                    // Ensure initial enforced sort model
-                    this.ag.api.setGridOption('sortModel', [{ colId: 'symbol', sort: 'asc' }, { colId: 'side', sort: 'asc' }]);
+                    // No enforced sort model; grouping handled via postSortRows
                     if (this.ag.quickFilter) this.ag.api.setGridOption('quickFilterText', this.ag.quickFilter);
                 },
 
