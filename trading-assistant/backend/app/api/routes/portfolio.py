@@ -6,6 +6,9 @@ Comprehensive portfolio analysis and validation endpoints
 from fastapi import APIRouter, HTTPException, Query
 from typing import Dict, Any, Optional
 from ...services.portfolio_service import portfolio_service
+from ...database.database import SessionLocal
+from ...database import models as db_models
+from sqlalchemy import select, func
 import logging
 
 logger = logging.getLogger(__name__)
@@ -175,6 +178,49 @@ async def get_portfolio_analytics() -> Dict[str, Any]:
     except Exception as e:
         logger.error(f"Error in portfolio analytics: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/changes")
+async def get_changes(symbol: str | None = None) -> Dict[str, Any]:
+    """Get change in PnL%/value over last 1h/1d/1w using stored snapshots."""
+    try:
+        db = SessionLocal()
+        now = func.now()
+        rows = {}
+        windows = {
+            "1h": func.datetime(func.datetime(now, '-0 second'), '-1 hour'),
+            "1d": func.datetime(func.datetime(now, '-0 second'), '-1 day'),
+            "1w": func.datetime(func.datetime(now, '-0 second'), '-7 day'),
+        }
+        for label, since in windows.items():
+            stmt = select(db_models.PositionSnapshot).where(db_models.PositionSnapshot.captured_at >= since)
+            if symbol:
+                stmt = stmt.where(db_models.PositionSnapshot.symbol == symbol)
+            stmt = stmt.order_by(db_models.PositionSnapshot.captured_at.desc())
+            result = db.execute(stmt).scalars().all()
+            # Compute deltas by symbol comparing first vs last in window
+            symbol_to_rows = {}
+            for r in result:
+                symbol_to_rows.setdefault(r.symbol, []).append(r)
+            deltas = {}
+            for sym, items in symbol_to_rows.items():
+                if len(items) < 2:
+                    continue
+                latest, oldest = items[0], items[-1]
+                deltas[sym] = {
+                    "pnl_pct_change": (latest.pnl_percentage - oldest.pnl_percentage),
+                    "pnl_usd_change": (latest.unrealized_pnl - oldest.unrealized_pnl),
+                    "price_change": (latest.current_price - oldest.current_price),
+                }
+            rows[label] = deltas
+        return {"status": "success", "data": rows}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        try:
+            db.close()
+        except Exception:
+            pass
 
 
 @router.get("/risk-assessment")

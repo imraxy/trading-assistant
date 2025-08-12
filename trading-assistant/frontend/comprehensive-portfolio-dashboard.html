@@ -418,7 +418,18 @@
             </div>
         </aside>
 
-        <!-- Positions Grid -->
+            <!-- Positions List/Grid Toggle -->
+            <div class="flex items-center justify-between mb-2">
+                <h2 class="text-xl font-bold text-gray-900">📑 Positions</h2>
+                <div class="space-x-2">
+                    <button @click="ui.listView = !ui.listView" class="text-sm bg-slate-100 hover:bg-slate-200 px-3 py-1 rounded">
+                        <span x-text="ui.listView ? 'Grid' : 'List'"></span>
+                    </button>
+                    <button @click="loadChanges()" class="text-sm bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded">Load Changes</button>
+                </div>
+            </div>
+
+            <!-- Positions Grid -->
         <section class="mb-10">
             <div class="flex items-center justify-between mb-4">
                 <h2 class="text-xl font-bold text-gray-900">📑 Positions</h2>
@@ -467,7 +478,7 @@
             </div>
 
             <!-- Grouped cards -->
-            <div x-show="ui.groupBySymbol" class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+            <div x-show="ui.groupBySymbol && !ui.listView" class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
                 <template x-for="group in groupedView" :key="group.symbol">
                     <div class="rounded-xl bg-white shadow hover:shadow-lg transition p-4 border border-gray-100">
                         <div class="flex items-center justify-between mb-2">
@@ -530,7 +541,46 @@
             </div>
 
             <!-- Flat table -->
-            <div x-show="!ui.groupBySymbol" class="bg-white rounded-xl shadow overflow-hidden">
+            <div x-show="!ui.groupBySymbol && !ui.listView" class="bg-white rounded-xl shadow overflow-hidden">
+            <!-- Positions List View -->
+            <div x-show="ui.listView" class="bg-white rounded-xl shadow overflow-hidden">
+                <div class="overflow-x-auto">
+                    <table class="min-w-full text-sm">
+                        <thead class="bg-gray-50 text-gray-600">
+                            <tr>
+                                <th class="px-3 py-2 text-left">Symbol</th>
+                                <th class="px-3 py-2 text-center">Side</th>
+                                <th class="px-3 py-2 text-right">Size</th>
+                                <th class="px-3 py-2 text-right">Entry</th>
+                                <th class="px-3 py-2 text-right">Price</th>
+                                <th class="px-3 py-2 text-right">PnL $</th>
+                                <th class="px-3 py-2 text-right">PnL %</th>
+                                <th class="px-3 py-2 text-right">Lev</th>
+                                <th class="px-3 py-2 text-right">Δ 1h</th>
+                                <th class="px-3 py-2 text-right">Δ 1d</th>
+                                <th class="px-3 py-2 text-right">Δ 1w</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <template x-for="p in tableView" :key="p.symbol + p.side + p.entry_price">
+                                <tr class="border-t border-gray-100 hover:bg-gray-50">
+                                    <td class="px-3 py-2 font-medium" x-text="p.symbol"></td>
+                                    <td class="px-3 py-2 text-center"><span class="px-2 py-0.5 rounded text-xs font-medium" :class="p.side === 'Buy' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'" x-text="p.side === 'Buy' ? 'Long' : 'Short'"></span></td>
+                                    <td class="px-3 py-2 text-right" x-text="p.size.toFixed(2)"></td>
+                                    <td class="px-3 py-2 text-right" x-text="p.entry_price.toFixed(4)"></td>
+                                    <td class="px-3 py-2 text-right" x-text="p.current_price.toFixed(4)"></td>
+                                    <td class="px-3 py-2 text-right" :class="p.unrealized_pnl>=0?'text-green-600':'text-red-600'" x-text="formatCurrency(p.unrealized_pnl)"></td>
+                                    <td class="px-3 py-2 text-right" :class="p.pnl_percentage>=0?'text-green-600':'text-red-600'" x-text="formatPercentage(p.pnl_percentage)"></td>
+                                    <td class="px-3 py-2 text-right" x-text="p.leverage.toFixed(0)+'x'"></td>
+                                    <td class="px-3 py-2 text-right" x-text="formatDelta(changes['1h'][p.symbol])"></td>
+                                    <td class="px-3 py-2 text-right" x-text="formatDelta(changes['1d'][p.symbol])"></td>
+                                    <td class="px-3 py-2 text-right" x-text="formatDelta(changes['1w'][p.symbol])"></td>
+                                </tr>
+                            </template>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
                 <div class="overflow-x-auto">
                     <table class="min-w-full text-sm">
                         <thead class="bg-gray-50 text-gray-600">
@@ -736,6 +786,8 @@
                 ui: { groupBySymbol: true, showClosed: false, chatOpen: false, debugOpen: false },
                 chat: { input: '', loading: false, messages: [] },
                 debug: { lastSnapshot: null, lastLogs: [], latest: null },
+                changes: { '1h': {}, '1d': {}, '1w': {} },
+                
                 filters: { search: '', side: '', pnlMin: null, pnlMax: null, levMin: null, levMax: null },
                 sort: { key: 'symbol', dir: 'asc' },
                 columns: [
@@ -815,6 +867,16 @@
                     }
                 },
 
+                async loadChanges() {
+                    try {
+                        const res = await fetch('/api/v1/portfolio/changes');
+                        const data = await res.json();
+                        if (data.status === 'success') {
+                            this.changes = data.data || this.changes;
+                        }
+                    } catch (e) { console.warn('Load changes failed', e); }
+                },
+
                 async captureSnapshot(save = false) {
                     try {
                         const res = await fetch('/api/v1/browser/snapshot', {
@@ -867,6 +929,13 @@
                         a.click();
                         URL.revokeObjectURL(a.href);
                     } catch (e) { console.error('Download logs failed', e); }
+                },
+
+                formatDelta(obj) {
+                    if (!obj) return '-';
+                    const v = obj.pnl_pct_change ?? 0;
+                    const cls = v >= 0 ? 'text-green-600' : 'text-red-600';
+                    return `${v.toFixed(2)}%`;
                 },
 
                 async sendChat() {

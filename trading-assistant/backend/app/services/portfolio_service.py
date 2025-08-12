@@ -9,6 +9,9 @@ from typing import Dict, List, Any, Optional, Tuple
 from datetime import datetime
 import logging
 from .bybit_service import bybit_service
+from ..database.database import engine, SessionLocal
+from ..database import models as db_models
+from sqlalchemy import select, func
 
 logger = logging.getLogger(__name__)
 
@@ -31,6 +34,36 @@ class PortfolioService:
                 }
             
             positions = positions_result["positions"]
+
+            # Persist snapshot for time-based queries (hour/day/week deltas)
+            try:
+                db = SessionLocal()
+                # Ensure tables exist (first run)
+                db_models.Base.metadata.create_all(bind=engine)
+                captured_at = datetime.utcnow()
+                for p in positions:
+                    row = db_models.PositionSnapshot(
+                        symbol=p.get("symbol"),
+                        side=p.get("side"),
+                        size=p.get("size", 0.0),
+                        entry_price=p.get("entry_price", 0.0),
+                        current_price=p.get("current_price", 0.0),
+                        position_value=p.get("position_value", 0.0),
+                        unrealized_pnl=p.get("unrealized_pnl", 0.0),
+                        pnl_percentage=p.get("pnl_percentage", 0.0),
+                        leverage=p.get("leverage", 0.0),
+                        category=p.get("category", "linear"),
+                        captured_at=captured_at,
+                    )
+                    db.add(row)
+                db.commit()
+            except Exception as e:
+                logger.warning(f"Snapshot persistence failed: {e}")
+            finally:
+                try:
+                    db.close()
+                except Exception:
+                    pass
             
             # Calculate portfolio summary
             portfolio_summary = self._calculate_portfolio_summary(positions)
