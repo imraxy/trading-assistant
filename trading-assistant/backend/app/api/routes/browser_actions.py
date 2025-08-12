@@ -57,6 +57,13 @@ class EvaluateRequest(BrowserActionRequest):
     script: str = Field(..., description="JavaScript code to execute")
 
 
+class SnapshotRequest(BaseModel):
+    """Capture snapshot of a URL and return image + logs"""
+    url: str
+    page_id: str = Field(default="assistant", description="Page identifier")
+    full_page: bool = False
+
+
 def get_browser_service(request: Request):
     """Get browser service from app state"""
     if not hasattr(request.app.state, 'browser_service') or not request.app.state.browser_service:
@@ -259,6 +266,26 @@ async def evaluate_javascript(
         raise
     except Exception as e:
         logger.error(f"Script evaluation failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/browser/snapshot")
+async def capture_snapshot(
+    request: SnapshotRequest,
+    browser_service = Depends(get_browser_service)
+) -> Dict[str, Any]:
+    """Capture a screenshot and return base64 image + logs"""
+    try:
+        result = await browser_service.capture_snapshot(
+            url=request.url, page_id=request.page_id, full_page=request.full_page
+        )
+        if result.get("success"):
+            return {"status": "success", "data": result}
+        raise HTTPException(status_code=400, detail=result.get("error", "Snapshot failed"))
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Snapshot failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 

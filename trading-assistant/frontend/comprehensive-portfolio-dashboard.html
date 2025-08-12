@@ -98,6 +98,12 @@
                             <span x-show="!validating">✓</span>
                             <span>Validate</span>
                         </button>
+                        
+                        <!-- Snapshot for assistant -->
+                        <button @click="captureSnapshot()"
+                                class="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg text-sm font-medium">
+                            Snapshot
+                        </button>
                     </div>
                     
                     <!-- Last Update -->
@@ -703,6 +709,7 @@
                 closed: [],
                 ui: { groupBySymbol: true, showClosed: false, chatOpen: false },
                 chat: { input: '', loading: false, messages: [] },
+                debug: { lastSnapshot: null, lastLogs: [] },
                 filters: { search: '', side: '', pnlMin: null, pnlMax: null, levMin: null, levMax: null },
                 sort: { key: 'symbol', dir: 'asc' },
                 columns: [
@@ -779,6 +786,26 @@
                         console.warn('Positions load failed', e);
                         this.positions = [];
                         this.closed = [];
+                    }
+                },
+
+                async captureSnapshot() {
+                    try {
+                        const res = await fetch('/api/v1/browser/snapshot', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ url: window.location.href, page_id: 'assistant', full_page: true })
+                        });
+                        const data = await res.json();
+                        if (data.status === 'success') {
+                            this.debug.lastSnapshot = data.data.image;
+                            this.debug.lastLogs = data.data.logs || [];
+                            console.log('Snapshot captured. Logs:', this.debug.lastLogs);
+                        } else {
+                            console.error('Snapshot failed', data);
+                        }
+                    } catch (e) {
+                        console.error('Snapshot error', e);
                     }
                 },
 

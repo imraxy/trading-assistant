@@ -33,6 +33,8 @@ class BrowserService:
         self.pages: Dict[str, Page] = {}
         self.screenshots_dir = Path("screenshots")
         self.screenshots_dir.mkdir(exist_ok=True)
+        # Collected console/network/pageerror logs per page_id
+        self.console_logs: Dict[str, List[Dict[str, Any]]] = {}
         
     async def initialize(self):
         """Initialize browser automation service"""
@@ -100,6 +102,48 @@ class BrowserService:
         context = self.contexts[context_id]
         page = await context.new_page()
         self.pages[page_id] = page
+        self.console_logs.setdefault(page_id, [])
+        # Attach event listeners for richer debug info
+        try:
+            def _push_console(msg):
+                try:
+                    self.console_logs[page_id].append({
+                        "type": msg.type,
+                        "text": msg.text(),
+                        "timestamp": datetime.utcnow().isoformat(),
+                    })
+                except Exception:
+                    pass
+
+            page.on("console", _push_console)
+
+            def _push_page_error(err):
+                try:
+                    self.console_logs[page_id].append({
+                        "type": "pageerror",
+                        "text": str(err),
+                        "timestamp": datetime.utcnow().isoformat(),
+                    })
+                except Exception:
+                    pass
+
+            page.on("pageerror", _push_page_error)
+
+            def _push_request_failed(req):
+                try:
+                    self.console_logs[page_id].append({
+                        "type": "requestfailed",
+                        "url": req.url,
+                        "failure": getattr(req.failure(), "errorText", None),
+                        "timestamp": datetime.utcnow().isoformat(),
+                    })
+                except Exception:
+                    pass
+
+            page.on("requestfailed", _push_request_failed)
+        except Exception:
+            # Events are best-effort; continue without blocking
+            pass
         
         logger.info(f"Created page: {page_id} in context: {context_id}")
         return page_id
@@ -249,11 +293,25 @@ class BrowserService:
         """Get console logs from the page"""
         if page_id not in self.pages:
             return {"success": False, "error": "Page not found"}
-        
-        # Note: This is a simplified implementation
-        # In a real implementation, you'd need to set up console event listeners
-        return {
-            "success": True,
-            "logs": [],
-            "note": "Console logging requires event listener setup"
-        }
+        logs = self.console_logs.get(page_id, [])
+        return {"success": True, "logs": logs}
+
+    async def capture_snapshot(self, url: str, page_id: str = "default", full_page: bool = False) -> Dict[str, Any]:
+        """Navigate to URL and return screenshot + logs"""
+        if page_id not in self.pages:
+            await self.create_page(page_id)
+        page = self.pages[page_id]
+        try:
+            await page.goto(url, wait_until="networkidle", timeout=settings.BROWSER_TIMEOUT)
+            img_bytes = await page.screenshot(full_page=full_page)
+            b64 = base64.b64encode(img_bytes).decode()
+            info = {
+                "url": page.url,
+                "title": await page.title(),
+                "viewport": page.viewport_size,
+            }
+            logs = self.console_logs.get(page_id, [])
+            return {"success": True, "image": b64, "info": info, "logs": logs}
+        except Exception as e:
+            logger.error(f"Snapshot failed: {e}")
+            return {"success": False, "error": str(e)}
