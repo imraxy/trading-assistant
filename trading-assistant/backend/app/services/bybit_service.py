@@ -161,6 +161,18 @@ class BybitService:
             active_positions = [pos for pos in all_positions if float(pos.get("size", 0) or 0) > 0]
             
             formatted_positions: List[Dict[str, Any]] = []
+            # We do not get the queried category back on each item; remember the
+            # most recent request category by walking queries again to build a
+            # symbol->category map for accuracy when needed.
+            symbol_to_category: Dict[str, str] = {}
+            for base_params in queries:
+                # Best-effort: category is either 'linear' or 'inverse'
+                # We will assign category per symbol on first encounter only.
+                for pos in all_positions:
+                    sym = pos.get("symbol")
+                    if sym and sym not in symbol_to_category:
+                        symbol_to_category[sym] = base_params["category"]
+
             for pos in active_positions:
                 try:
                     size = float(pos.get("size", 0) or 0)
@@ -168,10 +180,18 @@ class BybitService:
                     mark_price = float(pos.get("markPrice", 0) or 0)
                     unrealized_pnl = float(pos.get("unrealisedPnl", 0) or 0)
                     leverage = float(pos.get("leverage", 1) or 1)
-                    position_value = size * mark_price
+                    # Prefer Bybit's own computed position value when provided, as it
+                    # correctly handles contract multipliers and inverse instruments.
+                    position_value = float(pos.get("positionValue", 0) or 0)
+                    if position_value == 0:
+                        # Fallback heuristic: for linear contracts value ≈ size * mark_price
+                        # For inverse, this is not exact without contract size; however this
+                        # fallback is better than zero and keeps UI functional.
+                        position_value = size * mark_price
                     pnl_percentage = (unrealized_pnl / position_value) * 100 if position_value > 0 else 0
+                    sym = pos.get("symbol")
                     formatted_positions.append({
-                        "symbol": pos.get("symbol"),
+                        "symbol": sym,
                         "side": pos.get("side"),
                         "size": size,
                         "entry_price": entry_price,
@@ -180,7 +200,7 @@ class BybitService:
                         "unrealized_pnl": unrealized_pnl,
                         "pnl_percentage": pnl_percentage,
                         "leverage": leverage,
-                        "category": pos.get("category", "linear"),
+                        "category": symbol_to_category.get(sym, "linear"),
                         "created_time": pos.get("createdTime"),
                         "updated_time": pos.get("updatedTime"),
                     })
