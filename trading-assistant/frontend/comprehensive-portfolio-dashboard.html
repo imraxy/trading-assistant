@@ -368,6 +368,32 @@
             🤖 Chat
         </button>
 
+        <!-- Debug Panel Toggle -->
+        <button @click="ui.debugOpen = !ui.debugOpen; if(ui.debugOpen){loadLatestSnapshot();}"
+                class="fixed bottom-6 right-28 bg-slate-700 hover:bg-slate-800 text-white rounded-full shadow-lg px-4 py-3 font-medium">
+            🛠️ Debug
+        </button>
+
+        <!-- Debug Panel -->
+        <div x-show="ui.debugOpen" class="fixed bottom-20 right-6 w-[420px] max-h-[70vh] bg-white shadow-2xl border rounded-xl overflow-hidden flex flex-col">
+            <div class="px-4 py-3 border-b flex items-center justify-between">
+                <div class="font-semibold">Debug Snapshot</div>
+                <div class="space-x-2">
+                    <button @click="refreshLatestSnapshot()" class="text-xs bg-blue-600 hover:bg-blue-700 text-white px-2 py-1 rounded">Refresh</button>
+                    <button @click="downloadLatestLogs()" class="text-xs bg-slate-600 hover:bg-slate-700 text-white px-2 py-1 rounded">Logs</button>
+                    <button @click="ui.debugOpen=false" class="text-xs text-gray-500 hover:text-gray-700">✕</button>
+                </div>
+            </div>
+            <div class="p-3 overflow-auto">
+                <template x-if="debug.latest && debug.latest.image_url">
+                    <img :src="debug.latest.image_url" alt="Latest Snapshot" class="rounded border max-h-[55vh] w-full object-contain" />
+                </template>
+                <template x-if="!(debug.latest && debug.latest.image_url)">
+                    <div class="text-sm text-gray-500">No snapshot yet. Click Refresh to capture one.</div>
+                </template>
+            </div>
+        </div>
+
         <!-- Chatbot Drawer -->
         <div x-show="ui.chatOpen" class="fixed inset-0 bg-black/30" @click.self="ui.chatOpen=false"></div>
         <aside x-show="ui.chatOpen" class="fixed right-0 top-0 h-full w-full sm:w-[420px] bg-white shadow-2xl border-l border-gray-200 flex flex-col" x-transition>
@@ -707,9 +733,9 @@
                 lastUpdate: null,
                 positions: [],
                 closed: [],
-                ui: { groupBySymbol: true, showClosed: false, chatOpen: false },
+                ui: { groupBySymbol: true, showClosed: false, chatOpen: false, debugOpen: false },
                 chat: { input: '', loading: false, messages: [] },
-                debug: { lastSnapshot: null, lastLogs: [] },
+                debug: { lastSnapshot: null, lastLogs: [], latest: null },
                 filters: { search: '', side: '', pnlMin: null, pnlMax: null, levMin: null, levMax: null },
                 sort: { key: 'symbol', dir: 'asc' },
                 columns: [
@@ -802,6 +828,7 @@
                             this.debug.lastLogs = data.data.logs || [];
                             if (data.snapshot) {
                                 console.log('Snapshot URLs:', data.snapshot);
+                                this.debug.latest = data.snapshot;
                             }
                             console.log('Snapshot captured. Logs:', this.debug.lastLogs);
                         } else {
@@ -810,6 +837,36 @@
                     } catch (e) {
                         console.error('Snapshot error', e);
                     }
+                },
+
+                async loadLatestSnapshot() {
+                    try {
+                        const res = await fetch('/api/v1/browser/snapshot/latest');
+                        const data = await res.json();
+                        if (data.status === 'success') {
+                            this.debug.latest = data.snapshot;
+                        }
+                    } catch (e) { console.warn('Load latest snapshot failed', e); }
+                },
+
+                async refreshLatestSnapshot() {
+                    await this.captureSnapshot(true);
+                    await this.loadLatestSnapshot();
+                },
+
+                async downloadLatestLogs() {
+                    try {
+                        if (!(this.debug.latest && this.debug.latest.logs_url)) { await this.loadLatestSnapshot(); }
+                        if (!(this.debug.latest && this.debug.latest.logs_url)) return;
+                        const res = await fetch(this.debug.latest.logs_url);
+                        const j = await res.json();
+                        const blob = new Blob([JSON.stringify(j, null, 2)], { type: 'application/json' });
+                        const a = document.createElement('a');
+                        a.href = URL.createObjectURL(blob);
+                        a.download = 'snapshot-logs.json';
+                        a.click();
+                        URL.revokeObjectURL(a.href);
+                    } catch (e) { console.error('Download logs failed', e); }
                 },
 
                 async sendChat() {
