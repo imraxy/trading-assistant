@@ -213,9 +213,20 @@ async def get_changes(symbol: str | None = None) -> Dict[str, Any]:
                     continue
                 oldest = items[0]
                 latest = items[-1]
-                d = (latest.pnl_percentage - oldest.pnl_percentage)
+                # Use price percentage change over the window as the base signal,
+                # then orient it by position side. This avoids distortions from
+                # changing denominators in ROE/PNL% and better reflects movement
+                # in the underlying during the window.
+                try:
+                    if (oldest.current_price or 0) > 0:
+                        price_pct = ((latest.current_price - oldest.current_price) / oldest.current_price) * 100.0
+                    else:
+                        price_pct = 0.0
+                except Exception:
+                    price_pct = 0.0
+                oriented_pct = price_pct if side == 'Buy' else -price_pct
                 deltas.setdefault(sym, {})[side] = {
-                    "pnl_pct_change": d,
+                    "pnl_pct_change": oriented_pct,
                     "pnl_usd_change": (latest.unrealized_pnl - oldest.unrealized_pnl),
                     "price_change": (latest.current_price - oldest.current_price),
                 }

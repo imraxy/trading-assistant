@@ -989,6 +989,7 @@
                         pnlUsd: p.unrealized_pnl,
                         pnlPct: p.pnl_percentage,
                         lev: p.leverage,
+                        // Backend now returns oriented price % change (long positive, short negative)
                         d1h: (d1h[`${p.symbol}|${p.side}`]?.pnl_pct_change ?? 0),
                         d1d: (d1d[`${p.symbol}|${p.side}`]?.pnl_pct_change ?? 0),
                         d1w: (d1w[`${p.symbol}|${p.side}`]?.pnl_pct_change ?? 0),
