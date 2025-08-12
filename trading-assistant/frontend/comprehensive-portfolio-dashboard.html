@@ -123,11 +123,11 @@
     <!-- Main Content -->
     <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <!-- Advanced Data Grid (Top) -->
-        <section class="mb-10">
+        <section class="mb-6">
             <div class="flex items-center justify-between mb-2">
                 <h2 class="text-xl font-bold text-gray-900">📊 Advanced Data Grid</h2>
                 <div class="flex items-center gap-2">
-                    <input x-model.debounce.300ms="ag.quickFilter" @input="ag.api && ag.api.setQuickFilter(ag.quickFilter)" placeholder="Quick search..." class="rounded-lg border border-gray-300 px-3 py-2" />
+                    <input x-model.debounce.300ms="ag.quickFilter" @input="ag.api && ag.api.setGridOption('quickFilterText', ag.quickFilter)" placeholder="Quick search..." class="rounded-lg border border-gray-300 px-3 py-2" />
                     <button @click="exportCsv()" class="bg-slate-600 hover:bg-slate-700 text-white px-3 py-2 rounded">Export CSV</button>
                     <button @click="resetFilters()" class="bg-slate-100 hover:bg-slate-200 px-3 py-2 rounded">Reset</button>
                     <button @click="toggleSide('Buy')" class="bg-green-100 hover:bg-green-200 px-3 py-2 rounded">Long</button>
@@ -135,7 +135,7 @@
                     <button @click="renderAgGrid()" class="bg-blue-600 hover:bg-blue-700 text-white px-3 py-2 rounded">Render/Refresh</button>
                 </div>
             </div>
-            <div class="ag-theme-alpine rounded-xl shadow" style="height: 560px; width: 100%;" x-ref="agGridTop"></div>
+            <div class="ag-theme-alpine rounded-xl shadow" style="height: calc(100vh - 180px); width: 100%;" x-ref="agGridTop"></div>
         </section>
         
         <!-- Portfolio Summary Cards (hidden while grid UX is built) -->
@@ -968,7 +968,7 @@
                     const rows = this.tableView.map(p => ({
                         symbol: p.symbol,
                         side: p.side,
-                        size: p.size,
+                        valueUsd: p.position_value,
                         entry: p.entry_price,
                         price: p.current_price,
                         pnlUsd: p.unrealized_pnl,
@@ -979,52 +979,63 @@
                         d1w: (this.changes['1w'][p.symbol]?.pnl_pct_change ?? 0),
                     }));
 
+                    const usd = v => new Intl.NumberFormat('en-US', { style:'currency', currency:'USD', minimumFractionDigits:2 }).format(v||0);
+                    const pct = v => `${(v ?? 0).toFixed(2)}%`;
                     const columnDefs = [
-                        { field: 'symbol', filter: true, sortable: true },
-                        { field: 'side', filter: true, sortable: true },
-                        { field: 'size', headerName: 'Size', type: 'rightAligned', valueFormatter: p=> (p.value ?? 0).toFixed(2), sortable: true },
-                        { field: 'entry', headerName: 'Entry', type: 'rightAligned', valueFormatter: p=> (p.value ?? 0).toFixed(4), sortable: true },
-                        { field: 'price', headerName: 'Price', type: 'rightAligned', valueFormatter: p=> (p.value ?? 0).toFixed(4), sortable: true },
-                        { field: 'pnlUsd', headerName: 'PnL $', type: 'rightAligned', valueFormatter: p=> new Intl.NumberFormat('en-US', { style:'currency', currency:'USD', minimumFractionDigits:2 }).format(p.value||0), sortable: true },
-                        { field: 'pnlPct', headerName: 'PnL %', type: 'rightAligned', valueFormatter: p=> `${(p.value ?? 0).toFixed(2)}%`, sortable: true },
-                        { field: 'lev', headerName: 'Lev', type: 'rightAligned', valueFormatter: p=> `${(p.value ?? 0).toFixed(0)}x`, sortable: true },
-                        { field: 'd1h', headerName: 'Δ 1h', type: 'rightAligned', valueFormatter: p=> `${(p.value ?? 0).toFixed(2)}%`, sortable: true },
-                        { field: 'd1d', headerName: 'Δ 1d', type: 'rightAligned', valueFormatter: p=> `${(p.value ?? 0).toFixed(2)}%`, sortable: true },
-                        { field: 'd1w', headerName: 'Δ 1w', type: 'rightAligned', valueFormatter: p=> `${(p.value ?? 0).toFixed(2)}%`, sortable: true },
+                        { field: 'symbol', filter: 'agTextColumnFilter', floatingFilter: true, minWidth: 140 },
+                        { field: 'side', filter: 'agTextColumnFilter', floatingFilter: true, width: 90 },
+                        { field: 'valueUsd', headerName: 'Value $', type: 'rightAligned', filter: 'agNumberColumnFilter', floatingFilter: true, valueFormatter: p=> usd(p.value) },
+                        { field: 'entry', headerName: 'Entry', type: 'rightAligned', filter: 'agNumberColumnFilter', floatingFilter: true, valueFormatter: p=> (p.value ?? 0).toFixed(4) },
+                        { field: 'price', headerName: 'Price', type: 'rightAligned', filter: 'agNumberColumnFilter', floatingFilter: true, valueFormatter: p=> (p.value ?? 0).toFixed(4) },
+                        { field: 'pnlUsd', headerName: 'PnL $', type: 'rightAligned', filter: 'agNumberColumnFilter', floatingFilter: true, valueFormatter: p=> usd(p.value),
+                          cellClassRules: { 'text-green-600': p=> (p.value||0) >= 0, 'text-red-600': p=> (p.value||0) < 0 } },
+                        { field: 'pnlPct', headerName: 'PnL %', type: 'rightAligned', filter: 'agNumberColumnFilter', floatingFilter: true, valueFormatter: p=> pct(p.value),
+                          cellClassRules: { 'text-green-600': p=> (p.value||0) >= 0, 'text-red-600': p=> (p.value||0) < 0 } },
+                        { field: 'lev', headerName: 'Lev', type: 'rightAligned', width: 90, valueFormatter: p=> `${(p.value ?? 0).toFixed(0)}x` },
+                        { field: 'd1h', headerName: 'Δ 1h', type: 'rightAligned', filter: 'agNumberColumnFilter', floatingFilter: true, valueFormatter: p=> pct(p.value),
+                          cellClassRules: { 'text-green-600': p=> (p.value||0) >= 0, 'text-red-600': p=> (p.value||0) < 0 } },
+                        { field: 'd1d', headerName: 'Δ 1d', type: 'rightAligned', filter: 'agNumberColumnFilter', floatingFilter: true, valueFormatter: p=> pct(p.value),
+                          cellClassRules: { 'text-green-600': p=> (p.value||0) >= 0, 'text-red-600': p=> (p.value||0) < 0 } },
+                        { field: 'd1w', headerName: 'Δ 1w', type: 'rightAligned', filter: 'agNumberColumnFilter', floatingFilter: true, valueFormatter: p=> pct(p.value),
+                          cellClassRules: { 'text-green-600': p=> (p.value||0) >= 0, 'text-red-600': p=> (p.value||0) < 0 } },
                     ];
 
                     const gridOptions = {
                         columnDefs,
                         rowData: rows,
                         animateRows: true,
+                        rowHeight: 34,
+                        suppressDragLeaveHidesColumns: true,
                         defaultColDef: {
                             resizable: true,
                             sortable: true,
                             filter: true,
+                            floatingFilter: true,
+                            flex: 1,
+                            minWidth: 110,
                         },
                     };
 
                     const gridDiv = this.$refs.agGridTop || this.$refs.agGrid;
                     gridDiv.innerHTML = '';
                     this.ag.api = agGrid.createGrid(gridDiv, gridOptions);
-                    if (this.ag.quickFilter) this.ag.api.setQuickFilter(this.ag.quickFilter);
+                    if (this.ag.quickFilter) this.ag.api.setGridOption('quickFilterText', this.ag.quickFilter);
                 },
 
                 exportCsv() {
                     if (this.ag.api) this.ag.api.exportDataAsCsv({ fileName: 'positions.csv' });
                 },
                 resetFilters() {
-                    if (this.ag.api) {
-                        this.ag.api.setFilterModel(null);
-                        this.ag.api.setQuickFilter('');
-                        this.ag.quickFilter='';
-                    }
+                    if (!this.ag.api) return;
+                    this.ag.api.setGridOption('filterModel', null);
+                    this.ag.api.setGridOption('quickFilterText', '');
+                    this.ag.quickFilter='';
                 },
                 toggleSide(side) {
                     if (!this.ag.api) return;
-                    const fm = this.ag.api.getFilterModel() || {};
+                    const fm = this.ag.api.getGridOption('filterModel') || {};
                     fm.side = { type: 'equals', filter: side };
-                    this.ag.api.setFilterModel(fm);
+                    this.ag.api.setGridOption('filterModel', fm);
                 },
 
                 async sendChat() {
