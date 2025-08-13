@@ -1025,6 +1025,13 @@
                           cellClassRules: { 'text-green-600': p=> (p.value||0) >= 0, 'text-red-600': p=> (p.value||0) < 0 } },
                         { field: 'd1w', headerName: 'Δ 1w', type: 'rightAligned', filter: 'agNumberColumnFilter', floatingFilter: true, valueFormatter: p=> pct(p.value),
                           cellClassRules: { 'text-green-600': p=> (p.value||0) >= 0, 'text-red-600': p=> (p.value||0) < 0 } },
+                        {
+                            field: 'decision', headerName: 'Decision', minWidth: 140,
+                            tooltipField: 'decisionReason',
+                            cellClass: p => p.value === 'CLOSE' ? 'text-red-700 font-semibold' : (p.value === 'KEEP' ? 'text-green-700 font-semibold' : 'text-yellow-700 font-semibold'),
+                            valueGetter: (p) => p.data.__decision || '',
+                            tooltipValueGetter: (p) => p.data.__decisionReason || '',
+                        },
                     ];
 
                     const gridOptions = {
@@ -1073,8 +1080,41 @@
                     const gridDiv = this.$refs.agGridTop || this.$refs.agGrid;
                     gridDiv.innerHTML = '';
                     this.ag.api = agGrid.createGrid(gridDiv, gridOptions);
+                    // Kick off decisions asynchronously
+                    this.computeDecisions();
                     // No enforced sort model; grouping handled via postSortRows
                     if (this.ag.quickFilter) this.ag.api.setGridOption('quickFilterText', this.ag.quickFilter);
+                },
+
+                async computeDecisions() {
+                    if (!this.ag.api) return;
+                    const api = this.ag.api;
+                    const rows = [];
+                    api.forEachNode(n => rows.push(n));
+                    for (const n of rows) {
+                        try {
+                            const ctx = {
+                                valueUsd: n.data.valueUsd,
+                                pnlUsd: n.data.pnlUsd,
+                                pnlPct: n.data.pnlPct,
+                                lev: n.data.lev,
+                                d1h: n.data.d1h,
+                                d1d: n.data.d1d,
+                                d1w: n.data.d1w,
+                                hasHedge: this.positions.some(p => p.symbol===n.data.symbol && p.side!==n.data.side),
+                                support: undefined,
+                                resistance: undefined,
+                            };
+                            const res = await fetch('/api/v1/chat/decide', {
+                                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ symbol: n.data.symbol, side: n.data.side, context: ctx })
+                            });
+                            const j = await res.json();
+                            if (j.status === 'success' && j.data) {
+                                n.setData({ ...n.data, __decision: j.data.decision, __decisionReason: j.data.reason });
+                            }
+                        } catch (e) { /* ignore per-row error */ }
+                    }
                 },
 
                 exportCsv() {

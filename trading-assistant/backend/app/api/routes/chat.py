@@ -23,6 +23,12 @@ class ChatRequest(BaseModel):
     question: str
 
 
+class DecisionRequest(BaseModel):
+    symbol: str
+    side: str
+    context: Dict[str, Any]
+
+
 @router.post("/chat/ask")
 async def ask_chatbot(payload: ChatRequest) -> Dict[str, Any]:
     """Answer portfolio questions using current positions and analytics.
@@ -148,6 +154,82 @@ async def ask_chatbot(payload: ChatRequest) -> Dict[str, Any]:
             f"Ask about 'most at risk', 'top 3 profitable', or 'Should I close BTC short?'"
         )
         return {"status": "success", "answer": ans}
+
+
+@router.post("/chat/decide")
+async def decide_with_llm(payload: DecisionRequest) -> Dict[str, Any]:
+    """Ask LLM to decide KEEP/CLOSE for a specific position using rich context.
+
+    Considers TA deltas, leverage, position value, potential hedges, and
+    placeholder support/resistance levels. Returns concise decision and reason.
+    """
+    try:
+        symbol = payload.symbol
+        side = payload.side
+        ctx = payload.context or {}
+
+        openai_key = os.getenv("OPENAI_API_KEY")
+        # Prefer OpenAI; if not present, return heuristic decision
+        if openai_key:
+            import httpx
+            system = (
+                "You are a trading risk assistant. Based on the provided structured context, "
+                "output a JSON object with fields: decision (KEEP|CLOSE|REDUCE), reason (<=200 chars). "
+                "Consider leverage, unrealized PnL, position value, oriented 1h/1d/1w price deltas, "
+                "potential hedge (opposite side position present), and nearby support/resistance."
+            )
+            user = {
+                "symbol": symbol,
+                "side": side,
+                "context": ctx,
+            }
+            messages = [
+                {"role": "system", "content": system},
+                {"role": "user", "content": f"Decide for: {user}"},
+            ]
+            async with httpx.AsyncClient(timeout=25.0) as client:
+                resp = await client.post(
+                    "https://api.openai.com/v1/chat/completions",
+                    headers={
+                        "Authorization": f"Bearer {openai_key}",
+                        "Content-Type": "application/json",
+                    },
+                    json={
+                        "model": os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
+                        "messages": messages,
+                        "temperature": float(os.getenv("OPENAI_TEMPERATURE", "0.2")),
+                        "max_tokens": 200,
+                    },
+                )
+                if resp.status_code == 200:
+                    data = resp.json()
+                    content = data["choices"][0]["message"]["content"].strip()
+                    # Best-effort JSON extraction
+                    import json as _json
+                    try:
+                        parsed = _json.loads(content)
+                    except Exception:
+                        parsed = {"decision": "KEEP", "reason": content[:200]}
+                    return {"status": "success", "data": parsed}
+                else:
+                    logger.warning("LLM decide error: %s %s", resp.status_code, resp.text)
+        # Heuristic fallback
+        pnl_pct = float(ctx.get("pnlPct", 0) or 0)
+        lev = float(ctx.get("lev", 1) or 1)
+        d1h = float(ctx.get("d1h", 0) or 0)
+        hedge = bool(ctx.get("hasHedge", False))
+        decision = "KEEP"
+        reason = "Stable conditions"
+        if pnl_pct < -12 or (pnl_pct < 0 and lev >= 20 and d1h < -2):
+            decision = "CLOSE"
+            reason = "Drawdown with high leverage"
+        elif pnl_pct > 25 and d1h > 3 and not hedge:
+            decision = "REDUCE"
+            reason = "Lock partial profits after strong move"
+        return {"status": "success", "data": {"decision": decision, "reason": reason}}
+    except Exception as e:
+        logger.error(f"Decision error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
     except HTTPException:
         raise
