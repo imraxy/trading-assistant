@@ -63,9 +63,15 @@
         .correlation-moderate { color: #f59e0b; }
         .correlation-weak { color: #10b981; }
         .hidden-legacy { display: none !important; }
+
+        /* AG Grid row highlighting for Long/Short */
+        .ag-theme-quartz .ag-row.row-long .ag-cell { background: #f0fdf4; }
+        .ag-theme-quartz .ag-row.row-short .ag-cell { background: #fee2e2; }
+        .ag-theme-quartz-dark .ag-row.row-long .ag-cell { background: rgba(16,185,129,0.15); }
+        .ag-theme-quartz-dark .ag-row.row-short .ag-cell { background: rgba(239,68,68,0.15); }
     </style>
 </head>
-<body class="bg-gray-50 min-h-screen" x-data="comprehensivePortfolio()">
+<body class="bg-gray-50 dark:bg-gray-900 dark:text-gray-100 min-h-screen" x-data="comprehensivePortfolio()">
     <!-- Header -->
     <header class="bg-white shadow-lg border-b">
         <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -134,9 +140,10 @@
                     <button @click="toggleSide('Buy')" class="bg-green-100 hover:bg-green-200 px-3 py-2 rounded">Long</button>
                     <button @click="toggleSide('Sell')" class="bg-red-100 hover:bg-red-200 px-3 py-2 rounded">Short</button>
                     <button @click="renderAgGrid()" class="bg-blue-600 hover:bg-blue-700 text-white px-3 py-2 rounded">Render/Refresh</button>
+                    <button @click="toggleDark()" class="bg-neutral-800 text-white px-3 py-2 rounded dark:bg-neutral-200 dark:text-black" x-text="ui.darkMode ? 'Light' : 'Dark'"></button>
                 </div>
             </div>
-            <div class="ag-theme-quartz rounded-xl shadow w-screen -mx-2 sm:-mx-3 lg:-mx-4" style="height: calc(100vh - 140px);" x-ref="agGridTop"></div>
+            <div :class="(ui.darkMode ? 'ag-theme-quartz-dark' : 'ag-theme-quartz') + ' rounded-xl shadow w-screen -mx-2 sm:-mx-3 lg:-mx-4'" style="height: calc(100vh - 140px);" x-ref="agGridTop"></div>
         </section>
         
         <!-- Portfolio Summary Cards (hidden while grid UX is built) -->
@@ -806,7 +813,7 @@
                 lastUpdate: null,
                 positions: [],
                 closed: [],
-                ui: { groupBySymbol: true, showClosed: false, chatOpen: false, debugOpen: false },
+                ui: { groupBySymbol: true, showClosed: false, chatOpen: false, debugOpen: false, darkMode: false },
                 chat: { input: '', loading: false, messages: [] },
                 debug: { lastSnapshot: null, lastLogs: [], latest: null },
                 changes: { '1h': {}, '1d': {}, '1w': {} },
@@ -1026,13 +1033,17 @@
                         animateRows: true,
                         rowHeight: 34,
                         suppressDragLeaveHidesColumns: true,
+                        autoSizeStrategy: { type: 'fitCellContents' },
                         defaultColDef: {
                             resizable: true,
                             sortable: true,
                             filter: true,
                             floatingFilter: true,
-                            flex: 1,
                             minWidth: 110,
+                        },
+                        rowClassRules: {
+                            'row-long': p => (p.data?.side === 'Buy'),
+                            'row-short': p => (p.data?.side === 'Sell'),
                         },
                         // Keep Long/Short adjacent but preserve the user's chosen sort order across symbols
                         postSortRows: (params) => {
@@ -1080,6 +1091,12 @@
                     const fm = this.ag.api.getGridOption('filterModel') || {};
                     fm.side = { type: 'equals', filter: side };
                     this.ag.api.setGridOption('filterModel', fm);
+                },
+
+                toggleDark() {
+                    this.ui.darkMode = !this.ui.darkMode;
+                    try { document.documentElement.classList.toggle('dark', this.ui.darkMode); } catch(e) {}
+                    this.$nextTick(() => this.renderAgGrid());
                 },
 
                 async sendChat() {
