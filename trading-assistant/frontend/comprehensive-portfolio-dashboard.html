@@ -73,7 +73,7 @@
 </head>
 <body class="bg-gray-50 dark:bg-gray-900 dark:text-gray-100 min-h-screen" x-data="comprehensivePortfolio()">
     <!-- Header -->
-    <header class="bg-white shadow-lg border-b">
+    <header class="bg-white dark:bg-gray-800 shadow-lg border-b dark:border-gray-700">
         <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
             <div class="flex justify-between items-center py-6">
                 <div class="flex items-center space-x-4">
@@ -81,8 +81,8 @@
                         <span class="text-white font-bold text-lg">📊</span>
                     </div>
                     <div>
-                        <h1 class="text-2xl font-bold text-gray-900">Comprehensive Portfolio Dashboard</h1>
-                        <p class="text-sm text-gray-500">Advanced position analysis with mathematical validation</p>
+                        <h1 class="text-2xl font-bold text-gray-900 dark:text-gray-100">Comprehensive Portfolio Dashboard</h1>
+                        <p class="text-sm text-gray-500 dark:text-gray-400">Advanced position analysis with mathematical validation</p>
                     </div>
                 </div>
                 
@@ -132,7 +132,7 @@
         <!-- Advanced Data Grid (Top) -->
         <section class="mb-6">
             <div class="flex items-center justify-between mb-2">
-                <h2 class="text-xl font-bold text-gray-900">📊 Advanced Data Grid</h2>
+                <h2 class="text-xl font-bold text-gray-900 dark:text-gray-100">📊 Advanced Data Grid</h2>
                 <div class="flex items-center gap-2">
                     <input x-model.debounce.300ms="ag.quickFilter" @input="ag.api && ag.api.setGridOption('quickFilterText', ag.quickFilter)" placeholder="Quick search..." class="rounded-lg border border-gray-300 px-3 py-2" />
                     <button @click="exportCsv()" class="bg-slate-600 hover:bg-slate-700 text-white px-3 py-2 rounded">Export CSV</button>
@@ -653,7 +653,7 @@
         <div class="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8 hidden-legacy">
             
             <!-- Performance Analytics -->
-            <div class="analytics-card bg-white rounded-xl shadow-lg p-6">
+            <div class="analytics-card bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6">
                 <h2 class="text-xl font-bold text-gray-900 mb-6">📊 Performance Analytics</h2>
                 
                 <div class="space-y-4">
@@ -687,7 +687,7 @@
             </div>
 
             <!-- Risk Analytics -->
-            <div class="analytics-card bg-white rounded-xl shadow-lg p-6">
+            <div class="analytics-card bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6">
                 <h2 class="text-xl font-bold text-gray-900 mb-6">⚠️ Risk Analytics</h2>
                 
                 <div class="space-y-4">
@@ -774,30 +774,7 @@
             </div>
         </div>
 
-        <!-- Correlation Matrix (if available) -->
-        <div x-show="Object.keys(analytics.correlation_matrix || {}).length > 1" class="bg-white rounded-xl shadow-lg p-6">
-            <h2 class="text-xl font-bold text-gray-900 mb-6">🔗 Position Correlations</h2>
-            
-            <div class="overflow-x-auto">
-                <div class="grid gap-2" :style="`grid-template-columns: repeat(${Object.keys(analytics.correlation_matrix || {}).length + 1}, minmax(80px, 1fr))`">
-                    <!-- Header -->
-                    <div></div>
-                    <template x-for="symbol in Object.keys(analytics.correlation_matrix || {})" :key="'header-' + symbol">
-                        <div class="text-center font-medium text-sm p-2" x-text="symbol.replace('USDT', '')"></div>
-                    </template>
-                    
-                    <!-- Matrix rows -->
-                    <template x-for="symbol1 in Object.keys(analytics.correlation_matrix || {})" :key="symbol1">
-                        <template x-for="(correlation, index) in [symbol1].concat(Object.keys(analytics.correlation_matrix[symbol1] || {}))" :key="symbol1 + '-' + index">
-                            <div x-show="index === 0" class="text-center font-medium text-sm p-2" x-text="symbol1.replace('USDT', '')"></div>
-                            <div x-show="index > 0" class="text-center text-xs p-2 rounded"
-                                 :class="getCorrelationClass(analytics.correlation_matrix[symbol1][correlation] || 0)"
-                                 x-text="(analytics.correlation_matrix[symbol1][correlation] || 0).toFixed(2)"></div>
-                        </template>
-                    </template>
-                </div>
-            </div>
-        </div>
+        <!-- Correlation Matrix removed for now -->
     </main>
 
     <script>
