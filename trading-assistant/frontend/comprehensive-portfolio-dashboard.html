@@ -1033,18 +1033,28 @@
                             flex: 1,
                             minWidth: 110,
                         },
-                        // Keep Long/Short pairs adjacent regardless of user sort using postSortRows
+                        // Keep Long/Short adjacent but preserve the user's chosen sort order across symbols
                         postSortRows: (params) => {
-                            const sideRank = (s) => (s === 'Buy' ? 0 : 1);
-                            params.nodes.sort((a, b) => {
-                                const sa = (a.data?.symbol || '').toUpperCase();
-                                const sb = (b.data?.symbol || '').toUpperCase();
-                                if (sa !== sb) return sa.localeCompare(sb);
-                                const ra = sideRank(a.data?.side);
-                                const rb = sideRank(b.data?.side);
-                                if (ra !== rb) return ra - rb;
-                                return 0; // preserve internal order from current sort
-                            });
+                            const toSym = (n) => (n.data?.symbol || '').toUpperCase();
+                            const sideRank = (s) => (s === 'Buy' || s === 'LONG' || s === 'Long') ? 0 : 1;
+                            const groups = new Map();
+                            const order = [];
+                            for (const n of params.nodes) {
+                                const sym = toSym(n);
+                                if (!groups.has(sym)) {
+                                    groups.set(sym, []);
+                                    order.push(sym); // preserve order based on current (already user-sorted) nodes
+                                }
+                                groups.get(sym).push(n);
+                            }
+                            const reordered = [];
+                            for (const sym of order) {
+                                const arr = groups.get(sym) || [];
+                                arr.sort((a, b) => sideRank(a.data?.side) - sideRank(b.data?.side));
+                                reordered.push(...arr);
+                            }
+                            // mutate in place
+                            params.nodes.splice(0, params.nodes.length, ...reordered);
                         },
                     };
 
