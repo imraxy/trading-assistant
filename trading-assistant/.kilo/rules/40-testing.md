@@ -1,0 +1,6 @@
+# Tests-First Discipline
+- Add/adjust tests before implementation when changing behavior.
+- Cover happy path, edge cases, and failure modes.
+- Avoid network calls in tests; mock/stub instead.
+
+

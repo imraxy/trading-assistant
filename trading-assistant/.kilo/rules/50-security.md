@@ -1,0 +1,6 @@
+# Security & Secrets
+- Never hardcode secrets; use env/config.
+- Validate/sanitize inputs; handle timeouts/retries; avoid insecure crypto.
+- Add basic threat considerations for new endpoints.
+
+

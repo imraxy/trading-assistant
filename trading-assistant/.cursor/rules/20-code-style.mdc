@@ -1,0 +1,5 @@
+# Title: Code Style & Diff Hygiene
+- Obey `.editorconfig` and existing linters/formatters.
+- Do not reformat unrelated code or reorder imports.
+- Keep public APIs stable unless the task is explicitly about API change.
+
