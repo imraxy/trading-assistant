@@ -97,7 +97,7 @@
                     <div class="flex items-center space-x-2">
                         <button @click="refreshPortfolio()" 
                                 :disabled="loading"
-                                class="bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white px-4 py-2 rounded-lg text-sm font-medium flex items-center space-x-2 transition-all">
+                                class="bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white px-4 py-2 rounded-lg text-sm font-medium flex items-center space-x-2 transition-all dark:bg-blue-500 dark:hover:bg-blue-600">
                             <div x-show="loading" class="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
                             <span x-show="!loading">🔄</span>
                             <span>Refresh</span>
@@ -105,7 +105,7 @@
                         
                         <button @click="validatePortfolio()" 
                                 :disabled="validating"
-                                class="bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white px-4 py-2 rounded-lg text-sm font-medium flex items-center space-x-2 transition-all">
+                                class="bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white px-4 py-2 rounded-lg text-sm font-medium flex items-center space-x-2 transition-all dark:bg-green-500 dark:hover:bg-green-600">
                             <div x-show="validating" class="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
                             <span x-show="!validating">✓</span>
                             <span>Validate</span>
@@ -113,7 +113,7 @@
                         
                         <!-- Snapshot for assistant -->
                         <button @click="captureSnapshot(true)"
-                                class="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg text-sm font-medium">
+                                class="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg text-sm font-medium dark:bg-indigo-500 dark:hover:bg-indigo-600">
                             Snapshot
                         </button>
                     </div>
@@ -134,17 +134,17 @@
             <div class="flex items-center justify-between mb-2">
                 <h2 class="text-xl font-bold text-gray-900 dark:text-gray-100">📊 Advanced Data Grid</h2>
                 <div class="flex items-center gap-2">
-                    <input x-model.debounce.300ms="ag.quickFilter" @input="ag.api && ag.api.setGridOption('quickFilterText', ag.quickFilter)" placeholder="Quick search..." class="rounded-lg border border-gray-300 px-3 py-2" />
+                    <input x-model.debounce.300ms="ag.quickFilter" @input="ag.api && ag.api.setGridOption('quickFilterText', ag.quickFilter)" placeholder="Quick search..." class="rounded-lg border border-gray-300 px-3 py-2 dark:bg-gray-800 dark:border-gray-700 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400" />
                     <button @click="exportCsv()" class="bg-slate-600 hover:bg-slate-700 text-white px-3 py-2 rounded">Export CSV</button>
-                    <button @click="resetFilters()" class="bg-slate-100 hover:bg-slate-200 px-3 py-2 rounded">Reset</button>
-                    <button @click="toggleSide('Buy')" class="bg-green-100 hover:bg-green-200 px-3 py-2 rounded">Long</button>
-                    <button @click="toggleSide('Sell')" class="bg-red-100 hover:bg-red-200 px-3 py-2 rounded">Short</button>
+                    <button @click="resetFilters()" class="px-3 py-2 rounded bg-slate-100 hover:bg-slate-200 text-gray-800 dark:bg-gray-700 dark:hover:bg-gray-600 dark:text-gray-100 dark:border dark:border-gray-600">Reset</button>
+                    <button @click="toggleSide('Buy')" class="px-3 py-2 rounded bg-emerald-600 hover:bg-emerald-700 text-white">Long</button>
+                    <button @click="toggleSide('Sell')" class="px-3 py-2 rounded bg-rose-600 hover:bg-rose-700 text-white">Short</button>
                     <button @click="renderAgGrid()" class="bg-blue-600 hover:bg-blue-700 text-white px-3 py-2 rounded">Render/Refresh</button>
                     <button @click="ui.autoResearch = !ui.autoResearch; if (ui.autoResearch) computeDecisions();" :class="ui.autoResearch ? 'bg-emerald-600 hover:bg-emerald-700 text-white' : 'bg-slate-100 hover:bg-slate-200'" class="px-3 py-2 rounded" x-text="ui.autoResearch ? 'Auto Research: On' : 'Auto Research: Off'"></button>
                     <button @click="toggleDark()" class="bg-neutral-800 text-white px-3 py-2 rounded dark:bg-neutral-200 dark:text-black" x-text="ui.darkMode ? 'Light' : 'Dark'"></button>
                 </div>
             </div>
-            <div :class="(ui.darkMode ? 'ag-theme-quartz-dark' : 'ag-theme-quartz') + ' rounded-xl shadow w-screen -mx-2 sm:-mx-3 lg:-mx-4'" style="height: calc(100vh - 140px);" x-ref="agGridTop"></div>
+            <div :class="(ui.darkMode ? 'ag-theme-quartz-dark' : 'ag-theme-quartz') + ' rounded-xl shadow w-screen -mx-2 sm:-mx-3 lg:-mx-4 ring-1 ring-gray-200 dark:ring-gray-700'" style="height: calc(100vh - 140px);" x-ref="agGridTop"></div>
         </section>
         
         <!-- Portfolio Summary Cards (hidden while grid UX is built) -->
