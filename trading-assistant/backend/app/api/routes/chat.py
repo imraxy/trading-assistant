@@ -154,15 +154,45 @@ async def decide_with_llm(payload: DecisionRequest) -> Dict[str, Any]:
         # Prefer configured LLM; if not present, return heuristic decision
         if llm:
             system = (
-                "You are a trading risk assistant. Based on the provided structured context, "
-                "output a JSON object with fields: decision (KEEP|CLOSE|REDUCE), reason (<=200 chars). "
-                "Consider leverage, unrealized PnL, position value, oriented 1h/1d/1w price deltas, "
-                "potential hedge (opposite side position present), and nearby support/resistance. Include any TA/FA/news elements present in context."
+                "You are an expert multi-asset trading assistant."
+                " Use the structured context to perform disciplined analysis and return a concise JSON verdict."
+                " Stay within the provided data; do not fabricate unknown values."
+                " Synthesize Technical (TA), Fundamental (FA), and News/Sentiment if present."
+                " Prioritize risk controls and practical execution."
             )
+
+            # Ensure TA/FA/News keys exist so the model can consume them uniformly
+            enriched_ctx = {
+                **ctx,
+                "ta": ctx.get("ta") or {
+                    "rsi": None,
+                    "macd": None,
+                    "ema": None,
+                    "sma": None,
+                    "support_levels": ctx.get("support"),
+                    "resistance_levels": ctx.get("resistance"),
+                },
+                "fa": ctx.get("fa") or {"market_cap": None, "volatility": None, "funding_rate": None},
+                "news": ctx.get("news") or [],  # [{headline, sentiment, source, time}]
+            }
+
+            # Strict response contract so the UI can display full reasoning
+            response_contract = {
+                "decision": "KEEP | CLOSE | REDUCE",
+                "reason": "<=300 chars executive summary",
+                "factors": {
+                    "ta": "short list of TA signals relied upon",
+                    "fa": "short list of FA items/funding considered",
+                    "news": "short list of news/sentiment items if any",
+                    "risk": "key risks (e.g., leverage, drawdown, correlation)",
+                }
+            }
+
             user = {
                 "symbol": symbol,
                 "side": side,
-                "context": ctx,
+                "context": enriched_ctx,
+                "return_schema": response_contract,
             }
             content = await llm.chat_complete(system, f"Decide for: {user}")
             # Best-effort JSON extraction
@@ -170,7 +200,7 @@ async def decide_with_llm(payload: DecisionRequest) -> Dict[str, Any]:
             try:
                 parsed = _json.loads(content)
             except Exception:
-                parsed = {"decision": "KEEP", "reason": content[:200]}
+                parsed = {"decision": "KEEP", "reason": content[:300], "factors": {}}
             return {"status": "success", "data": parsed}
         # Heuristic fallback
         pnl_pct = float(ctx.get("pnlPct", 0) or 0)
