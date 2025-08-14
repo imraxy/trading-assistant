@@ -446,6 +446,34 @@
             </div>
         </aside>
 
+        <!-- Decision Detail Panel -->
+        <div x-show="ui.decisionOpen" class="fixed bottom-20 left-6 w-[460px] max-h-[70vh] bg-white dark:bg-gray-800 shadow-2xl border dark:border-gray-700 rounded-xl overflow-hidden flex flex-col">
+            <div class="px-4 py-3 border-b dark:border-gray-700 flex items-center justify-between">
+                <div class="font-semibold">Decision Details</div>
+                <button @click="ui.decisionOpen=false" class="text-sm text-gray-500 hover:text-gray-700">✕</button>
+            </div>
+            <div class="p-4 overflow-auto text-sm">
+                <template x-if="decision && decision.symbol">
+                    <div>
+                        <div class="mb-2"><span class="font-medium">Symbol:</span> <span x-text="decision.symbol"></span></div>
+                        <div class="mb-2"><span class="font-medium">Side:</span> <span x-text="decision.side"></span></div>
+                        <div class="mb-2"><span class="font-medium">Decision:</span> <span class="px-2 py-0.5 rounded" :class="decision.decision==='CLOSE'?'bg-red-100 text-red-800':decision.decision==='KEEP'?'bg-green-100 text-green-800':'bg-yellow-100 text-yellow-800'" x-text="decision.decision"></span></div>
+                        <div class="mb-3 leading-relaxed"><span class="font-medium">Reason:</span> <span x-text="decision.reason || 'No reason provided by model.'"></span></div>
+                        <div class="grid grid-cols-2 gap-2">
+                            <div><span class="text-gray-500">Value $</span>: <span x-text="formatCurrency(decision.valueUsd||0)"></span></div>
+                            <div><span class="text-gray-500">PnL $</span>: <span :class="(decision.pnlUsd||0)>=0?'text-green-600':'text-red-600'" x-text="formatCurrency(decision.pnlUsd||0)"></span></div>
+                            <div><span class="text-gray-500">PnL %</span>: <span :class="(decision.pnlPct||0)>=0?'text-green-600':'text-red-600'" x-text="formatPercentage(decision.pnlPct||0)"></span></div>
+                            <div><span class="text-gray-500">Lev</span>: <span x-text="(decision.lev||0).toFixed(0)+'x'"></span></div>
+                            <div><span class="text-gray-500">Δ 1h</span>: <span :class="(decision.d1h||0)>=0?'text-green-600':'text-red-600'" x-text="(decision.d1h||0).toFixed(2)+'%'"></span></div>
+                            <div><span class="text-gray-500">Δ 1d</span>: <span :class="(decision.d1d||0)>=0?'text-green-600':'text-red-600'" x-text="(decision.d1d||0).toFixed(2)+'%'"></span></div>
+                            <div><span class="text-gray-500">Δ 1w</span>: <span :class="(decision.d1w||0)>=0?'text-green-600':'text-red-600'" x-text="(decision.d1w||0).toFixed(2)+'%'"></span></div>
+                            <div><span class="text-gray-500">Hedge present</span>: <span x-text="decision.hasHedge?'Yes':'No'"></span></div>
+                        </div>
+                    </div>
+                </template>
+            </div>
+        </div>
+
             <!-- Positions List/Grid Toggle -->
             <div class="flex items-center justify-between mb-2">
                 <h2 class="text-xl font-bold text-gray-900">📑 Positions</h2>
@@ -790,9 +818,10 @@
                 lastUpdate: null,
                 positions: [],
                 closed: [],
-                ui: { groupBySymbol: true, showClosed: false, chatOpen: false, debugOpen: false, darkMode: false },
+                ui: { groupBySymbol: true, showClosed: false, chatOpen: false, debugOpen: false, darkMode: false, decisionOpen: false },
                 chat: { input: '', loading: false, messages: [] },
                 debug: { lastSnapshot: null, lastLogs: [], latest: null },
+                decision: null,
                 changes: { '1h': {}, '1d': {}, '1w': {} },
                 ag: { api: null, quickFilter: '' },
                 
@@ -1017,6 +1046,8 @@
                         animateRows: true,
                         rowHeight: 34,
                         suppressDragLeaveHidesColumns: true,
+                        enableBrowserTooltips: true,
+                        tooltipShowDelay: 200,
                         autoSizeStrategy: { type: 'fitCellContents' },
                         defaultColDef: {
                             resizable: true,
@@ -1028,6 +1059,25 @@
                         rowClassRules: {
                             'row-long': p => (p.data?.side === 'Buy'),
                             'row-short': p => (p.data?.side === 'Sell'),
+                        },
+                        onCellClicked: (event) => {
+                            if (event.colDef.field === 'decision' && event.data) {
+                                this.decision = {
+                                    symbol: event.data.symbol,
+                                    side: event.data.side === 'Buy' ? 'Long' : 'Short',
+                                    decision: event.data.__decision,
+                                    reason: event.data.__decisionReason,
+                                    valueUsd: event.data.valueUsd,
+                                    pnlUsd: event.data.pnlUsd,
+                                    pnlPct: event.data.pnlPct,
+                                    lev: event.data.lev,
+                                    d1h: event.data.d1h,
+                                    d1d: event.data.d1d,
+                                    d1w: event.data.d1w,
+                                    hasHedge: this.positions.some(p => p.symbol===event.data.symbol && p.side!==event.data.side),
+                                };
+                                this.ui.decisionOpen = true;
+                            }
                         },
                         // Keep Long/Short adjacent but preserve the user's chosen sort order across symbols
                         postSortRows: (params) => {
