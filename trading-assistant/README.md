@@ -256,3 +256,4 @@ This software is for educational and research purposes only. Trading cryptocurre
 - GitHub Issues: Report bugs and feature requests
 - Documentation: Check `/docs` endpoint when running
 - API Reference: `/docs` and `/redoc` endpoints 
+ - Resources: see `docs/resources.md` for shared links

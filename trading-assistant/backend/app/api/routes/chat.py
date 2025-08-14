@@ -154,7 +154,11 @@ async def ask_chatbot(payload: ChatRequest) -> Dict[str, Any]:
             f"Ask about 'most at risk', 'top 3 profitable', or 'Should I close BTC short?'"
         )
         return {"status": "success", "answer": ans}
-
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Chat error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/chat/decide")
 async def decide_with_llm(payload: DecisionRequest) -> Dict[str, Any]:
@@ -229,12 +233,6 @@ async def decide_with_llm(payload: DecisionRequest) -> Dict[str, Any]:
         return {"status": "success", "data": {"decision": decision, "reason": reason}}
     except Exception as e:
         logger.error(f"Decision error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Chat error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
