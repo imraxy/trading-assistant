@@ -140,6 +140,7 @@
                     <button @click="toggleSide('Buy')" class="bg-green-100 hover:bg-green-200 px-3 py-2 rounded">Long</button>
                     <button @click="toggleSide('Sell')" class="bg-red-100 hover:bg-red-200 px-3 py-2 rounded">Short</button>
                     <button @click="renderAgGrid()" class="bg-blue-600 hover:bg-blue-700 text-white px-3 py-2 rounded">Render/Refresh</button>
+                    <button @click="ui.autoResearch = !ui.autoResearch; if (ui.autoResearch) computeDecisions();" :class="ui.autoResearch ? 'bg-emerald-600 hover:bg-emerald-700 text-white' : 'bg-slate-100 hover:bg-slate-200'" class="px-3 py-2 rounded" x-text="ui.autoResearch ? 'Auto Research: On' : 'Auto Research: Off'"></button>
                     <button @click="toggleDark()" class="bg-neutral-800 text-white px-3 py-2 rounded dark:bg-neutral-200 dark:text-black" x-text="ui.darkMode ? 'Light' : 'Dark'"></button>
                 </div>
             </div>
@@ -818,7 +819,7 @@
                 lastUpdate: null,
                 positions: [],
                 closed: [],
-                ui: { groupBySymbol: true, showClosed: false, chatOpen: false, debugOpen: false, darkMode: false, decisionOpen: false },
+                ui: { groupBySymbol: true, showClosed: false, chatOpen: false, debugOpen: false, darkMode: false, decisionOpen: false, autoResearch: false },
                 chat: { input: '', loading: false, messages: [] },
                 debug: { lastSnapshot: null, lastLogs: [], latest: null },
                 decision: null,
@@ -1075,6 +1076,7 @@
                                     d1d: event.data.d1d,
                                     d1w: event.data.d1w,
                                     hasHedge: this.positions.some(p => p.symbol===event.data.symbol && p.side!==event.data.side),
+                                    factors: event.data.__factors || {}
                                 };
                                 this.ui.decisionOpen = true;
                             }
@@ -1120,6 +1122,14 @@
                     api.forEachNode(n => rows.push(n));
                     for (const n of rows) {
                         try {
+                            if (this.ui.autoResearch) {
+                                const res = await fetch(`/api/v1/research/decide?symbol=${encodeURIComponent(n.data.symbol)}&side=${encodeURIComponent(n.data.side)}`);
+                                const j = await res.json();
+                                if (j.status === 'success' && j.data) {
+                                    n.setData({ ...n.data, __decision: j.data.decision, __decisionReason: j.data.reason, __factors: j.data.factors, __context: j.data.context });
+                                    continue;
+                                }
+                            }
                             const ctx = {
                                 valueUsd: n.data.valueUsd,
                                 pnlUsd: n.data.pnlUsd,
@@ -1138,7 +1148,7 @@
                             });
                             const j = await res.json();
                             if (j.status === 'success' && j.data) {
-                                n.setData({ ...n.data, __decision: j.data.decision, __decisionReason: j.data.reason });
+                                n.setData({ ...n.data, __decision: j.data.decision, __decisionReason: j.data.reason, __factors: j.data.factors });
                             }
                         } catch (e) { /* ignore per-row error */ }
                     }
