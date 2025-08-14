@@ -14,6 +14,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 
 from .api.routes import health, positions, browser_actions, market_data, portfolio
+from .api.routes import research
 from .api.routes import chat
 from .core.config import get_settings
 from .core.logging import setup_logging
@@ -96,6 +97,7 @@ app.include_router(portfolio.router, prefix="/api/v1/portfolio", tags=["Portfoli
 app.include_router(browser_actions.router, prefix="/api/v1", tags=["Browser Actions"])
 app.include_router(market_data.router, prefix="/api/v1", tags=["Market Data"])
 app.include_router(chat.router, prefix="/api/v1", tags=["Chat"])
+app.include_router(research.router, prefix="/api/v1", tags=["Research"])
 
 # Serve static files (frontend)
 frontend_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "..", "frontend")
