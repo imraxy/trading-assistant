@@ -14,6 +14,7 @@ import logging
 
 from ...services.bybit_service import bybit_service
 from ...services.portfolio_service import portfolio_service
+from ...services.llm_provider import get_llm_client
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -53,10 +54,9 @@ async def ask_chatbot(payload: ChatRequest) -> Dict[str, Any]:
         analytics = analysis_result.get("analytics", {})
 
         # If OpenAI available, build a concise context and ask
-        openai_key = os.getenv("OPENAI_API_KEY")
-        if openai_key:
+        llm = get_llm_client()
+        if llm:
             try:
-                import httpx
                 # Compact context to keep token usage low
                 top_positions = sorted(
                     positions,
@@ -77,32 +77,10 @@ async def ask_chatbot(payload: ChatRequest) -> Dict[str, Any]:
                     "You are a trading assistant. Answer briefly with actionable insights "
                     "based on the provided positions and analytics. Recommend CLOSE/KEEP/REDUCE with reason."
                 )
-                messages = [
-                    {"role": "system", "content": system},
-                    {"role": "user", "content": f"Question: {question}\nContext: {context}"},
-                ]
-                # Use Chat Completions compatible endpoint
-                async with httpx.AsyncClient(timeout=30.0) as client:
-                    resp = await client.post(
-                        "https://api.openai.com/v1/chat/completions",
-                        headers={
-                            "Authorization": f"Bearer {openai_key}",
-                            "Content-Type": "application/json",
-                        },
-                        json={
-                            "model": os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
-                            "messages": messages,
-                            "temperature": float(os.getenv("OPENAI_TEMPERATURE", "0.2")),
-                            "max_tokens": int(os.getenv("OPENAI_MAX_TOKENS", "500")),
-                        },
-                    )
-                    if resp.status_code == 200:
-                        data = resp.json()
-                        answer = data["choices"][0]["message"]["content"].strip()
-                        return {"status": "success", "answer": answer}
-                    else:
-                        logger.warning("OpenAI error: %s %s", resp.status_code, resp.text)
-                        # fall through to heuristic answer
+                user = f"Question: {question}\nContext: {context}"
+                answer = await llm.chat_complete(system, user)
+                if answer:
+                    return {"status": "success", "answer": answer}
             except Exception as e:
                 logger.warning(f"OpenAI call failed, using heuristic answer: {e}")
 
@@ -172,51 +150,28 @@ async def decide_with_llm(payload: DecisionRequest) -> Dict[str, Any]:
         side = payload.side
         ctx = payload.context or {}
 
-        openai_key = os.getenv("OPENAI_API_KEY")
-        # Prefer OpenAI; if not present, return heuristic decision
-        if openai_key:
-            import httpx
+        llm = get_llm_client()
+        # Prefer configured LLM; if not present, return heuristic decision
+        if llm:
             system = (
                 "You are a trading risk assistant. Based on the provided structured context, "
                 "output a JSON object with fields: decision (KEEP|CLOSE|REDUCE), reason (<=200 chars). "
                 "Consider leverage, unrealized PnL, position value, oriented 1h/1d/1w price deltas, "
-                "potential hedge (opposite side position present), and nearby support/resistance."
+                "potential hedge (opposite side position present), and nearby support/resistance. Include any TA/FA/news elements present in context."
             )
             user = {
                 "symbol": symbol,
                 "side": side,
                 "context": ctx,
             }
-            messages = [
-                {"role": "system", "content": system},
-                {"role": "user", "content": f"Decide for: {user}"},
-            ]
-            async with httpx.AsyncClient(timeout=25.0) as client:
-                resp = await client.post(
-                    "https://api.openai.com/v1/chat/completions",
-                    headers={
-                        "Authorization": f"Bearer {openai_key}",
-                        "Content-Type": "application/json",
-                    },
-                    json={
-                        "model": os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
-                        "messages": messages,
-                        "temperature": float(os.getenv("OPENAI_TEMPERATURE", "0.2")),
-                        "max_tokens": 200,
-                    },
-                )
-                if resp.status_code == 200:
-                    data = resp.json()
-                    content = data["choices"][0]["message"]["content"].strip()
-                    # Best-effort JSON extraction
-                    import json as _json
-                    try:
-                        parsed = _json.loads(content)
-                    except Exception:
-                        parsed = {"decision": "KEEP", "reason": content[:200]}
-                    return {"status": "success", "data": parsed}
-                else:
-                    logger.warning("LLM decide error: %s %s", resp.status_code, resp.text)
+            content = await llm.chat_complete(system, f"Decide for: {user}")
+            # Best-effort JSON extraction
+            import json as _json
+            try:
+                parsed = _json.loads(content)
+            except Exception:
+                parsed = {"decision": "KEEP", "reason": content[:200]}
+            return {"status": "success", "data": parsed}
         # Heuristic fallback
         pnl_pct = float(ctx.get("pnlPct", 0) or 0)
         lev = float(ctx.get("lev", 1) or 1)
