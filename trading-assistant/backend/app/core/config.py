@@ -32,7 +32,14 @@ class Settings(BaseSettings):
     BYBIT_API_SECRET: Optional[str] = None
     BYBIT_TESTNET: bool = True
     
+    # LLM / AI Providers
+    AI_PROVIDER: str = "openai"  # openai|gemini
     OPENAI_API_KEY: Optional[str] = None
+    OPENAI_MODEL: str = "gpt-4o-mini"
+    OPENAI_TEMPERATURE: float = 0.2
+    GOOGLE_API_KEY: Optional[str] = None
+    GEMINI_API_KEY: Optional[str] = None
+    GEMINI_MODEL: str = "gemini-1.5-pro"
     
     ALPHA_VANTAGE_API_KEY: Optional[str] = None
     NEWS_API_KEY: Optional[str] = None

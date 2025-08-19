@@ -144,6 +144,33 @@ curl http://localhost:8000/api/v1/config
 - **API Documentation:** http://localhost:8000/docs
 - **Basic Dashboard:** http://localhost:8000/basic
 
+## 🔧 Local Launch Scripts (WSL)
+
+Use these helper scripts from the repo root `/mnt/i/Sachin/cryptoAnalysis`:
+
+```bash
+# start backend (creates venv, installs deps, waits for health)
+scripts/start_backend.sh
+
+# tail backend logs
+scripts/backend_logs.sh
+
+# stop backend on :8000
+scripts/stop_backend.sh
+
+# quick status (socket + health)
+scripts/status.sh
+
+# launch backend and open browser
+scripts/launch_all.sh
+```
+
+Windows PowerShell helper to open an isolated browser profile with remote debugging:
+
+```powershell
+scripts\open_windows_browser.ps1 -Port 9224 -Url "http://localhost:8000/"
+```
+
 ## 📊 Current Project Status
 
 ### ✅ Completed Features (Week 1 + Enhancements)

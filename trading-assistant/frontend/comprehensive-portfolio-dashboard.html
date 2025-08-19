@@ -135,16 +135,26 @@
                 <h2 class="text-xl font-bold text-gray-900 dark:text-gray-100">📊 Advanced Data Grid</h2>
                 <div class="flex items-center gap-2">
                     <input x-model.debounce.300ms="ag.quickFilter" @input="ag.api && ag.api.setGridOption('quickFilterText', ag.quickFilter)" placeholder="Quick search..." class="rounded-lg border border-gray-300 px-3 py-2 dark:bg-gray-800 dark:border-gray-700 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400" />
-                    <button @click="exportCsv()" class="bg-slate-600 hover:bg-slate-700 text-white px-3 py-2 rounded">Export CSV</button>
+                    <button @click="exportCsv()" class="px-3 py-2 rounded bg-slate-600 hover:bg-slate-700 text-white dark:bg-slate-500 dark:hover:bg-slate-600">Export CSV</button>
                     <button @click="resetFilters()" class="px-3 py-2 rounded bg-slate-100 hover:bg-slate-200 text-gray-800 dark:bg-gray-700 dark:hover:bg-gray-600 dark:text-gray-100 dark:border dark:border-gray-600">Reset</button>
-                    <button @click="toggleSide('Buy')" class="px-3 py-2 rounded bg-emerald-600 hover:bg-emerald-700 text-white">Long</button>
-                    <button @click="toggleSide('Sell')" class="px-3 py-2 rounded bg-rose-600 hover:bg-rose-700 text-white">Short</button>
-                    <button @click="renderAgGrid()" class="bg-blue-600 hover:bg-blue-700 text-white px-3 py-2 rounded">Render/Refresh</button>
-                    <button @click="ui.autoResearch = !ui.autoResearch; if (ui.autoResearch) computeDecisions();" :class="ui.autoResearch ? 'bg-emerald-600 hover:bg-emerald-700 text-white' : 'bg-slate-100 hover:bg-slate-200'" class="px-3 py-2 rounded" x-text="ui.autoResearch ? 'Auto Research: On' : 'Auto Research: Off'"></button>
+                    <button @click="toggleSide('Buy')" class="px-3 py-2 rounded bg-emerald-600 hover:bg-emerald-700 text-white dark:bg-emerald-500 dark:hover:bg-emerald-600">Long</button>
+                    <button @click="toggleSide('Sell')" class="px-3 py-2 rounded bg-rose-600 hover:bg-rose-700 text-white dark:bg-rose-500 dark:hover:bg-rose-600">Short</button>
+                    <button @click="renderAgGrid()" class="px-3 py-2 rounded bg-blue-600 hover:bg-blue-700 text-white dark:bg-blue-500 dark:hover:bg-blue-600">Render/Refresh</button>
+                    <select x-model="ui.provider" @change="onProviderChanged" class="px-2 py-2 rounded border dark:bg-gray-800 dark:border-gray-700 dark:text-gray-100">
+                        <option value="">Auto</option>
+                        <option value="openai">OpenAI</option>
+                        <option value="gemini">Gemini</option>
+                        <option value="anthropic">Anthropic</option>
+                        <option value="mistral">Mistral</option>
+                        <option value="groq">Groq</option>
+                    </select>
+                    <button @click="manualRefreshDecisions()" class="px-3 py-2 rounded bg-purple-600 hover:bg-purple-700 text-white dark:bg-purple-500 dark:hover:bg-purple-600" title="Load cached decisions (or recompute if auto is on)">LLM Refresh</button>
+                    <button @click="toggleDecisions()" :class="ui.decisionsRunning ? 'px-3 py-2 rounded bg-emerald-600 hover:bg-emerald-700 text-white dark:bg-emerald-500 dark:hover:bg-emerald-600' : 'px-3 py-2 rounded bg-slate-100 hover:bg-slate-200 dark:bg-gray-700 dark:hover:bg-gray-600 dark:text-gray-100 dark:border dark:border-gray-600'" x-text="ui.decisionsRunning ? 'Decisions: On' : 'Decisions: Off'"></button>
+                    <button @click="ui.autoResearch = !ui.autoResearch" :class="ui.autoResearch ? 'px-3 py-2 rounded bg-emerald-600 hover:bg-emerald-700 text-white dark:bg-emerald-500 dark:hover:bg-emerald-600' : 'px-3 py-2 rounded bg-slate-100 hover:bg-slate-200 dark:bg-gray-700 dark:hover:bg-gray-600 dark:text-gray-100 dark:border dark:border-gray-600'" x-text="ui.autoResearch ? 'Auto Research: On' : 'Auto Research: Off'"></button>
                     <button @click="toggleDark()" class="bg-neutral-800 text-white px-3 py-2 rounded dark:bg-neutral-200 dark:text-black" x-text="ui.darkMode ? 'Light' : 'Dark'"></button>
                 </div>
             </div>
-            <div :class="(ui.darkMode ? 'ag-theme-quartz-dark' : 'ag-theme-quartz') + ' rounded-xl shadow w-screen -mx-2 sm:-mx-3 lg:-mx-4 ring-1 ring-gray-200 dark:ring-gray-700'" style="height: calc(100vh - 140px);" x-ref="agGridTop"></div>
+            <div :class="(ui.darkMode ? 'ag-theme-quartz-dark' : 'ag-theme-quartz') + ' rounded-xl shadow w-full ring-1 ring-gray-200 dark:ring-gray-700'" style="height: calc(100vh - 140px);" x-ref="agGridTop"></div>
         </section>
         
         <!-- Portfolio Summary Cards (hidden while grid UX is built) -->
@@ -447,19 +457,38 @@
             </div>
         </aside>
 
-        <!-- Decision Detail Panel -->
-        <div x-show="ui.decisionOpen" class="fixed bottom-20 left-6 w-[460px] max-h-[70vh] bg-white dark:bg-gray-800 shadow-2xl border dark:border-gray-700 rounded-xl overflow-hidden flex flex-col">
-            <div class="px-4 py-3 border-b dark:border-gray-700 flex items-center justify-between">
+        <!-- Decision Drawer (right slide-out) -->
+        <div x-show="ui.decisionOpen" class="fixed inset-0 bg-black/30" @click.self="ui.decisionOpen=false"></div>
+        <aside x-show="ui.decisionOpen" class="fixed right-0 top-0 h-full w-full sm:w-[440px] bg-white dark:bg-gray-800 shadow-2xl border-l border-gray-200 dark:border-gray-700 flex flex-col" x-transition>
+            <div class="p-4 border-b dark:border-gray-700 flex items-center justify-between">
                 <div class="font-semibold">Decision Details</div>
-                <button @click="ui.decisionOpen=false" class="text-sm text-gray-500 hover:text-gray-700">✕</button>
+                <div class="flex items-center gap-2">
+                    <button @click="refreshDecision(decision.symbol, decision.side)" class="text-xs bg-purple-600 hover:bg-purple-700 text-white px-2 py-1 rounded">Refresh</button>
+                    <button @click="viewPrompt(decision.symbol, decision.side)" class="text-xs bg-slate-600 hover:bg-slate-700 text-white px-2 py-1 rounded">View Prompt</button>
+                    <button @click="ui.decisionOpen=false" class="text-sm text-gray-500 hover:text-gray-700">✕</button>
+                </div>
             </div>
-            <div class="p-4 overflow-auto text-sm">
+            <div class="p-4 overflow-auto text-sm flex-1">
                 <template x-if="decision && decision.symbol">
                     <div>
                         <div class="mb-2"><span class="font-medium">Symbol:</span> <span x-text="decision.symbol"></span></div>
                         <div class="mb-2"><span class="font-medium">Side:</span> <span x-text="decision.side"></span></div>
                         <div class="mb-2"><span class="font-medium">Decision:</span> <span class="px-2 py-0.5 rounded" :class="decision.decision==='CLOSE'?'bg-red-100 text-red-800':decision.decision==='KEEP'?'bg-green-100 text-green-800':'bg-yellow-100 text-yellow-800'" x-text="decision.decision"></span></div>
                         <div class="mb-3 leading-relaxed"><span class="font-medium">Reason:</span> <span x-text="decision.reason || 'No reason provided by model.'"></span></div>
+                        <div class="mb-3 text-xs text-gray-500 dark:text-gray-400">
+                            <div class="font-medium mb-1">Sources used:</div>
+                            <div class="grid grid-cols-3 gap-2">
+                                <div>TA: <span x-text="(decision.provenance?.ta || 'none')"></span></div>
+                                <div>FA: <span x-text="(decision.provenance?.fa || 'none')"></span></div>
+                                <div>News: <span x-text="(decision.provenance?.news || 'none')"></span></div>
+                            </div>
+                        </div>
+                        <div class="mb-3 text-xs text-gray-500 dark:text-gray-400" x-show="decision.context && decision.context.summaries">
+                            <div class="font-medium mb-1">Summaries:</div>
+                            <div>TA: <span x-text="decision.context?.summaries?.ta || '—'"></span></div>
+                            <div>FA: <span x-text="decision.context?.summaries?.fa || '—'"></span></div>
+                            <div>News: <span x-text="decision.context?.summaries?.news || '—'"></span></div>
+                        </div>
                         <div class="grid grid-cols-2 gap-2">
                             <div><span class="text-gray-500">Value $</span>: <span x-text="formatCurrency(decision.valueUsd||0)"></span></div>
                             <div><span class="text-gray-500">PnL $</span>: <span :class="(decision.pnlUsd||0)>=0?'text-green-600':'text-red-600'" x-text="formatCurrency(decision.pnlUsd||0)"></span></div>
@@ -469,11 +498,32 @@
                             <div><span class="text-gray-500">Δ 1d</span>: <span :class="(decision.d1d||0)>=0?'text-green-600':'text-red-600'" x-text="(decision.d1d||0).toFixed(2)+'%'"></span></div>
                             <div><span class="text-gray-500">Δ 1w</span>: <span :class="(decision.d1w||0)>=0?'text-green-600':'text-red-600'" x-text="(decision.d1w||0).toFixed(2)+'%'"></span></div>
                             <div><span class="text-gray-500">Hedge present</span>: <span x-text="decision.hasHedge?'Yes':'No'"></span></div>
+                            <div class="col-span-2"><span class="text-gray-500">Received</span>: <span x-text="decision.receivedAt ? new Date(decision.receivedAt).toLocaleString() : '—'"></span></div>
                         </div>
                     </div>
                 </template>
             </div>
-        </div>
+        </aside>
+
+        <!-- Prompt Drawer (right slide-out) -->
+        <div x-show="ui.promptOpen" class="fixed inset-0 bg-black/30" @click.self="ui.promptOpen=false"></div>
+        <aside x-show="ui.promptOpen" class="fixed right-0 top-0 h-full w-full sm:w-[560px] bg-white dark:bg-gray-900 shadow-2xl border-l border-gray-200 dark:border-gray-700 flex flex-col" x-transition>
+            <div class="p-4 border-b dark:border-gray-700 flex items-center justify-between">
+                <div class="font-semibold">LLM Prompt</div>
+                <div class="flex items-center gap-2">
+                    <button @click="() => { navigator.clipboard.writeText(JSON.stringify(prompt || {}, null, 2)) }" class="text-xs bg-slate-600 hover:bg-slate-700 text-white px-2 py-1 rounded">Copy</button>
+                    <button @click="ui.promptOpen=false" class="text-sm text-gray-500 hover:text-gray-300">✕</button>
+                </div>
+            </div>
+            <div class="p-4 overflow-auto text-xs flex-1">
+                <template x-if="prompt && (Object.keys(prompt).length > 0)">
+                    <pre class="whitespace-pre-wrap break-words" x-text="JSON.stringify(prompt, null, 2)"></pre>
+                </template>
+                <template x-if="!prompt || Object.keys(prompt).length===0">
+                    <div class="text-gray-400">Prompt not available yet. Click View Prompt after computing a decision for this row.</div>
+                </template>
+            </div>
+        </aside>
 
             <!-- Positions List/Grid Toggle -->
             <div class="flex items-center justify-between mb-2">
@@ -819,10 +869,11 @@
                 lastUpdate: null,
                 positions: [],
                 closed: [],
-                ui: { groupBySymbol: true, showClosed: false, chatOpen: false, debugOpen: false, darkMode: false, decisionOpen: false, autoResearch: false },
+                ui: { groupBySymbol: true, showClosed: false, chatOpen: false, debugOpen: false, darkMode: false, decisionOpen: false, promptOpen: false, autoResearch: false, decisionsRunning: false, provider: '' },
                 chat: { input: '', loading: false, messages: [] },
                 debug: { lastSnapshot: null, lastLogs: [], latest: null },
                 decision: null,
+                prompt: null,
                 changes: { '1h': {}, '1d': {}, '1w': {} },
                 ag: { api: null, quickFilter: '' },
                 
@@ -847,7 +898,14 @@
                     await this.refreshPortfolio();
                     await this.loadPositions();
                     await this.loadChanges();
-                    this.$nextTick(() => this.renderAgGrid());
+                    this.$nextTick(async () => {
+                        this.renderAgGrid();
+                        // Load cached decisions immediately (without turning on auto loop)
+                        await this.populateCachedDecisions();
+                    });
+                },
+                onProviderChanged(){
+                    if(this.ui.decisionsRunning){ this.computeDecisions(); }
                 },
                 
                 // Connection check
@@ -1037,7 +1095,21 @@
                             tooltipField: 'decisionReason',
                             cellClass: p => p.value === 'CLOSE' ? 'text-red-700 font-semibold' : (p.value === 'KEEP' ? 'text-green-700 font-semibold' : 'text-yellow-700 font-semibold'),
                             valueGetter: (p) => p.data.__decision || '',
-                            tooltipValueGetter: (p) => p.data.__decisionReason || '',
+                            tooltipValueGetter: (p) => {
+                                const when = p.data.__receivedAt ? `\nReceived: ${new Date(p.data.__receivedAt).toLocaleTimeString()}` : '';
+                                return (p.data.__decisionReason || '') + when;
+                            },
+                            cellRenderer: (p) => {
+                                const decision = p.data.__decision || '';
+                                const received = p.data.__receivedAt ? new Date(p.data.__receivedAt) : null;
+                                let age = '';
+                                if (received) {
+                                    const mins = Math.floor((Date.now() - received.getTime()) / 60000);
+                                    age = mins < 1 ? 'just now' : `${mins}m ago`;
+                                }
+                                const badge = age ? `<span class=\"ml-2 text-[11px] text-gray-500\">${age}</span>` : '';
+                                return `<span>${decision}</span>${badge}`;
+                            },
                         },
                     ];
 
@@ -1076,7 +1148,9 @@
                                     d1d: event.data.d1d,
                                     d1w: event.data.d1w,
                                     hasHedge: this.positions.some(p => p.symbol===event.data.symbol && p.side!==event.data.side),
-                                    factors: event.data.__factors || {}
+                                    factors: event.data.__factors || {},
+                                    provenance: event.data.__provenance || {},
+                                    context: event.data.__context || {}
                                 };
                                 this.ui.decisionOpen = true;
                             }
@@ -1109,26 +1183,88 @@
                     const gridDiv = this.$refs.agGridTop || this.$refs.agGrid;
                     gridDiv.innerHTML = '';
                     this.ag.api = agGrid.createGrid(gridDiv, gridOptions);
-                    // Kick off decisions asynchronously
-                    this.computeDecisions();
+                    // Do not auto-start decisions; user controls via toggle
                     // No enforced sort model; grouping handled via postSortRows
                     if (this.ag.quickFilter) this.ag.api.setGridOption('quickFilterText', this.ag.quickFilter);
                 },
 
+                toggleDecisions() {
+                    this.ui.decisionsRunning = !this.ui.decisionsRunning;
+                    if (this.ui.decisionsRunning) {
+                        // initial run
+                        this.computeDecisions();
+                    }
+                },
+
+                async manualRefreshDecisions() {
+                    // If auto loop is on, run computeDecisions (it will also schedule next)
+                    if (this.ui.decisionsRunning) {
+                        await this.computeDecisions();
+                        return;
+                    }
+                    // Otherwise, just pull cached decisions from backend DB/cache once
+                    await this.populateCachedDecisions();
+                },
+
+                async populateCachedDecisions() {
+                    if (!this.ag.api) return;
+                    try {
+                        const api = this.ag.api;
+                        const rows = [];
+                        api.forEachNode(n => rows.push(n));
+                        const payload = { positions: rows.map(n => ({ symbol: n.data.symbol, side: n.data.side })), recent_only_minutes: 1440, use_cache_only: true };
+                        const resp = await fetch('/api/v1/research/decide/batch', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+                        const jb = await resp.json();
+                        if (jb.status === 'success' && Array.isArray(jb.results)) {
+                            const key = (r) => `${r.symbol}|${r.side}`;
+                            const map = new Map(jb.results.map(r => [key(r), r]));
+                            for (const n of rows) {
+                                const r = map.get(`${n.data.symbol}|${n.data.side}`);
+                                if (r) {
+                                    n.setData({ ...n.data, __decision: r.decision, __decisionReason: r.reason, __factors: r.factors, __context: r.context, __provenance: r.provenance, __receivedAt: r.received_at });
+                                }
+                            }
+                        }
+                    } catch (e) { /* no-op */ }
+                },
+
                 async computeDecisions() {
+                    if (!this.ui.decisionsRunning) return;
                     if (!this.ag.api) return;
                     const api = this.ag.api;
                     const rows = [];
                     api.forEachNode(n => rows.push(n));
-                    for (const n of rows) {
+                    // Batch path when auto research is on
+                    if (this.ui.autoResearch) {
+                        const payload = { positions: rows.map(n => ({ symbol: n.data.symbol, side: n.data.side })), recent_only_minutes: 240, provider: this.ui.provider || undefined };
                         try {
-                            if (this.ui.autoResearch) {
-                                const res = await fetch(`/api/v1/research/decide?symbol=${encodeURIComponent(n.data.symbol)}&side=${encodeURIComponent(n.data.side)}`);
-                                const j = await res.json();
-                                if (j.status === 'success' && j.data) {
-                                    n.setData({ ...n.data, __decision: j.data.decision, __decisionReason: j.data.reason, __factors: j.data.factors, __context: j.data.context });
-                                    continue;
+                            const resp = await fetch('/api/v1/research/decide/batch', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+                            const jb = await resp.json();
+                            if (jb.status === 'success' && Array.isArray(jb.results)) {
+                                const key = (r) => `${r.symbol}|${r.side}`;
+                                const map = new Map(jb.results.map(r => [key(r), r]));
+                                for (const n of rows) {
+                                    const r = map.get(`${n.data.symbol}|${n.data.side}`);
+                                    if (r) {
+                                        n.setData({ ...n.data, __decision: r.decision, __decisionReason: r.reason, __factors: r.factors, __context: r.context, __provenance: r.provenance, __receivedAt: r.received_at });
+                                    }
                                 }
+                                // schedule next run in background if toggle still on
+                                if (this.ui.decisionsRunning) setTimeout(() => this.computeDecisions(), 60_000);
+                                return;
+                            }
+                        } catch (e) { /* fall through to per-row */ }
+                    }
+                    // Per-row path (non-batch). Still use research API for TA/FA/News so provenance is filled.
+                    for (const n of rows) {
+                        if (!this.ui.decisionsRunning) break;
+                        try {
+                            // Prefer research API per row
+                            const resR = await fetch(`/api/v1/research/decide?symbol=${encodeURIComponent(n.data.symbol)}&side=${encodeURIComponent(n.data.side)}${this.ui.provider?`&provider=${this.ui.provider}`:''}`);
+                            const jR = await resR.json();
+                            if (jR.status === 'success' && jR.data) {
+                                n.setData({ ...n.data, __decision: jR.data.decision, __decisionReason: jR.data.reason, __factors: jR.data.factors, __context: jR.data.context, __provenance: jR.data.provenance, __receivedAt: new Date().toISOString() });
+                                continue;
                             }
                             const ctx = {
                                 valueUsd: n.data.valueUsd,
@@ -1142,16 +1278,14 @@
                                 support: undefined,
                                 resistance: undefined,
                             };
-                            const res = await fetch('/api/v1/chat/decide', {
-                                method: 'POST', headers: { 'Content-Type': 'application/json' },
-                                body: JSON.stringify({ symbol: n.data.symbol, side: n.data.side, context: ctx })
-                            });
+                            const res = await fetch('/api/v1/chat/decide', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ symbol: n.data.symbol, side: n.data.side, context: ctx, provider: this.ui.provider || undefined }) });
                             const j = await res.json();
                             if (j.status === 'success' && j.data) {
-                                n.setData({ ...n.data, __decision: j.data.decision, __decisionReason: j.data.reason, __factors: j.data.factors });
+                                n.setData({ ...n.data, __decision: j.data.decision, __decisionReason: j.data.reason, __factors: j.data.factors, __receivedAt: new Date().toISOString() });
                             }
                         } catch (e) { /* ignore per-row error */ }
                     }
+                    if (this.ui.decisionsRunning) setTimeout(() => this.computeDecisions(), 60_000);
                 },
 
                 exportCsv() {
@@ -1195,6 +1329,40 @@
                     } finally {
                         this.chat.loading = false;
                     }
+                },
+
+                async refreshDecision(symbol, sideHuman) {
+                    try {
+                        const side = sideHuman === 'Long' ? 'Buy' : (sideHuman === 'Short' ? 'Sell' : sideHuman);
+                        const url = `/api/v1/research/decide?symbol=${encodeURIComponent(symbol)}&side=${encodeURIComponent(side)}&force_refresh=true`;
+                        const res = await fetch(url + `${this.ui.provider?`&provider=${this.ui.provider}`:''}`);
+                        const j = await res.json();
+                        if (j.status === 'success' && j.data) {
+                            // update grid row
+                            if (this.ag.api) {
+                                const rows = [];
+                                this.ag.api.forEachNode(n => rows.push(n));
+                                const target = rows.find(n => n.data.symbol === symbol && n.data.side === side);
+                                if (target) {
+                                    target.setData({ ...target.data, __decision: j.data.decision, __decisionReason: j.data.reason, __factors: j.data.factors, __context: j.data.context, __provenance: j.data.provenance, __receivedAt: new Date().toISOString() });
+                                }
+                            }
+                            // update drawer
+                            this.decision = { ...this.decision, decision: j.data.decision, reason: j.data.reason, factors: j.data.factors, provenance: j.data.provenance, context: j.data.context, receivedAt: new Date().toISOString() };
+                        }
+                    } catch (e) {
+                        console.warn('Refresh decision failed', e);
+                    }
+                },
+
+                async viewPrompt(symbol, sideHuman) {
+                    try {
+                        const side = sideHuman === 'Long' ? 'Buy' : (sideHuman === 'Short' ? 'Sell' : sideHuman);
+                        // Force a refresh with debug so backend attaches prompt into response
+                        const res = await fetch(`/api/v1/research/decide?symbol=${encodeURIComponent(symbol)}&side=${encodeURIComponent(side)}&force_refresh=true&debug=true${this.ui.provider?`&provider=${this.ui.provider}`:''}`);
+                        const j = await res.json();
+                        if (j.status === 'success') { this.prompt = j.prompt || {}; this.ui.promptOpen = true; }
+                    } catch (e) { console.warn('View prompt failed', e); }
                 },
 
                 // Sorting

@@ -17,7 +17,17 @@ from .api.routes import health, positions, browser_actions, market_data, portfol
 from .api.routes import research
 from .api.routes import chat
 from .core.config import get_settings
+from .services.llm_provider import available_providers
 from .core.logging import setup_logging
+from dotenv import load_dotenv
+
+# Load environment variables from backend/.env so os.getenv works across services
+try:
+    _here = os.path.dirname(__file__)
+    _env_path = os.path.abspath(os.path.join(_here, "..", ".env"))
+    load_dotenv(_env_path)
+except Exception:
+    pass
 
 # Setup logging
 setup_logging()
@@ -131,8 +141,12 @@ async def get_config():
             "features": {
                 "browser_automation": hasattr(app.state, 'browser_service') and app.state.browser_service is not None,
                 "bybit_integration": bool(settings.BYBIT_API_KEY),
-                "openai_integration": bool(settings.OPENAI_API_KEY),
+                "openai_integration": bool(os.getenv("OPENAI_API_KEY") or settings.OPENAI_API_KEY),
+                "gemini_integration": bool(os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")),
+                "ai_provider": (os.getenv("AI_PROVIDER") or "openai"),
             }
+        ,
+            "llm_providers": available_providers()
         }
     }
 

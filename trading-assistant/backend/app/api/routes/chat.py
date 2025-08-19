@@ -14,7 +14,7 @@ import logging
 
 from ...services.bybit_service import bybit_service
 from ...services.portfolio_service import portfolio_service
-from ...services.llm_provider import get_llm_client
+from ...services.llm_provider import get_llm_client, get_llm_client_for, available_providers
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -22,12 +22,14 @@ router = APIRouter()
 
 class ChatRequest(BaseModel):
     question: str
+    provider: Optional[str] = None
 
 
 class DecisionRequest(BaseModel):
     symbol: str
     side: str
     context: Dict[str, Any]
+    provider: Optional[str] = None
 
 
 @router.post("/chat/ask")
@@ -54,7 +56,7 @@ async def ask_chatbot(payload: ChatRequest) -> Dict[str, Any]:
         analytics = analysis_result.get("analytics", {})
 
         # If OpenAI available, build a concise context and ask
-        llm = get_llm_client()
+        llm = get_llm_client_for(payload.provider) or get_llm_client()
         if llm:
             try:
                 # Compact context to keep token usage low
@@ -150,58 +152,61 @@ async def decide_with_llm(payload: DecisionRequest) -> Dict[str, Any]:
         side = payload.side
         ctx = payload.context or {}
 
-        llm = get_llm_client()
-        # Prefer configured LLM; if not present, return heuristic decision
+        llm = get_llm_client_for(payload.provider) or get_llm_client()
+        # Prefer configured LLM; if not present or fails, return heuristic decision
         if llm:
-            system = (
-                "You are an expert multi-asset trading assistant."
-                " Use the structured context to perform disciplined analysis and return a concise JSON verdict."
-                " Stay within the provided data; do not fabricate unknown values."
-                " Synthesize Technical (TA), Fundamental (FA), and News/Sentiment if present."
-                " Prioritize risk controls and practical execution."
-            )
-
-            # Ensure TA/FA/News keys exist so the model can consume them uniformly
-            enriched_ctx = {
-                **ctx,
-                "ta": ctx.get("ta") or {
-                    "rsi": None,
-                    "macd": None,
-                    "ema": None,
-                    "sma": None,
-                    "support_levels": ctx.get("support"),
-                    "resistance_levels": ctx.get("resistance"),
-                },
-                "fa": ctx.get("fa") or {"market_cap": None, "volatility": None, "funding_rate": None},
-                "news": ctx.get("news") or [],  # [{headline, sentiment, source, time}]
-            }
-
-            # Strict response contract so the UI can display full reasoning
-            response_contract = {
-                "decision": "KEEP | CLOSE | REDUCE",
-                "reason": "<=300 chars executive summary",
-                "factors": {
-                    "ta": "short list of TA signals relied upon",
-                    "fa": "short list of FA items/funding considered",
-                    "news": "short list of news/sentiment items if any",
-                    "risk": "key risks (e.g., leverage, drawdown, correlation)",
-                }
-            }
-
-            user = {
-                "symbol": symbol,
-                "side": side,
-                "context": enriched_ctx,
-                "return_schema": response_contract,
-            }
-            content = await llm.chat_complete(system, f"Decide for: {user}")
-            # Best-effort JSON extraction
-            import json as _json
             try:
-                parsed = _json.loads(content)
-            except Exception:
-                parsed = {"decision": "KEEP", "reason": content[:300], "factors": {}}
-            return {"status": "success", "data": parsed}
+                system = (
+                    "You are an expert multi-asset trading assistant."
+                    " Use the structured context to perform disciplined analysis and return a concise JSON verdict."
+                    " Stay within the provided data; do not fabricate unknown values."
+                    " Synthesize Technical (TA), Fundamental (FA), and News/Sentiment if present."
+                    " Prioritize risk controls and practical execution."
+                )
+
+                # Ensure TA/FA/News keys exist so the model can consume them uniformly
+                enriched_ctx = {
+                    **ctx,
+                    "ta": ctx.get("ta") or {
+                        "rsi": None,
+                        "macd": None,
+                        "ema": None,
+                        "sma": None,
+                        "support_levels": ctx.get("support"),
+                        "resistance_levels": ctx.get("resistance"),
+                    },
+                    "fa": ctx.get("fa") or {"market_cap": None, "volatility": None, "funding_rate": None},
+                    "news": ctx.get("news") or [],  # [{headline, sentiment, source, time}]
+                }
+
+                # Strict response contract so the UI can display full reasoning
+                response_contract = {
+                    "decision": "KEEP | CLOSE | REDUCE",
+                    "reason": "<=300 chars executive summary",
+                    "factors": {
+                        "ta": "short list of TA signals relied upon",
+                        "fa": "short list of FA items/funding considered",
+                        "news": "short list of news/sentiment items if any",
+                        "risk": "key risks (e.g., leverage, drawdown, correlation)",
+                    }
+                }
+
+                user = {
+                    "symbol": symbol,
+                    "side": side,
+                    "context": enriched_ctx,
+                    "return_schema": response_contract,
+                }
+                content = await llm.chat_complete(system, f"Decide for: {user}")
+                # Best-effort JSON extraction
+                import json as _json
+                try:
+                    parsed = _json.loads(content)
+                except Exception:
+                    parsed = {"decision": "KEEP", "reason": content[:300], "factors": {}}
+                return {"status": "success", "data": parsed}
+            except Exception as e:
+                logger.warning(f"LLM decision failed, using heuristic: {e}")
         # Heuristic fallback
         pnl_pct = float(ctx.get("pnlPct", 0) or 0)
         lev = float(ctx.get("lev", 1) or 1)

@@ -182,9 +182,15 @@ async def get_portfolio_analytics() -> Dict[str, Any]:
 
 @router.get("/changes")
 async def get_changes(symbol: str | None = None) -> Dict[str, Any]:
-    """Get change in PnL% over last 1h/1d/1w per (symbol, side).
-    Logic: for each window, pick earliest and latest snapshots for the same
-    symbol+side within [now-window, now], then compute latest.pnl% - earliest.pnl%.
+    """Get oriented price % change over last 1h/1d/1w per (symbol, side).
+
+    Improved logic:
+    - Query a wider time span (8d back) to have context before each window.
+    - For each window, choose:
+        earliest: the first snapshot at/after the window start; if none, the latest snapshot before the window start.
+        latest: the most recent snapshot overall (up to now) per (symbol, side).
+    - Compute price % change = (latest.price - earliest.price) / earliest.price * 100.
+      Orient by side (long positive, short negative). Falls back robustly when sparse data.
     """
     try:
         db = SessionLocal()
@@ -195,31 +201,51 @@ async def get_changes(symbol: str | None = None) -> Dict[str, Any]:
             "1d": now_py - timedelta(days=1),
             "1w": now_py - timedelta(days=7),
         }
+        # Look back far enough to cover the largest window plus buffer
+        base_since = now_py - timedelta(days=8)
+
+        # Fetch a superset of snapshots once to reduce queries
+        stmt_all = select(db_models.PositionSnapshot).where(db_models.PositionSnapshot.captured_at >= base_since)
+        if symbol:
+            stmt_all = stmt_all.where(db_models.PositionSnapshot.symbol == symbol)
+        stmt_all = stmt_all.order_by(
+            db_models.PositionSnapshot.symbol.asc(),
+            db_models.PositionSnapshot.side.asc(),
+            db_models.PositionSnapshot.captured_at.asc(),
+        )
+        rows = db.execute(stmt_all).scalars().all()
+
+        # Group all snapshots by (symbol, side)
+        groups: Dict[tuple, list] = {}
+        for r in rows:
+            key = (r.symbol, r.side)
+            groups.setdefault(key, []).append(r)
+
         out: Dict[str, Dict[str, Dict[str, float]]] = {}
         for label, since_py in windows.items():
-            stmt = select(db_models.PositionSnapshot).where(db_models.PositionSnapshot.captured_at >= since_py)
-            if symbol:
-                stmt = stmt.where(db_models.PositionSnapshot.symbol == symbol)
-            stmt = stmt.order_by(db_models.PositionSnapshot.symbol.asc(), db_models.PositionSnapshot.side.asc(), db_models.PositionSnapshot.captured_at.asc())
-            result = db.execute(stmt).scalars().all()
-            # Group by (symbol, side)
-            groups: Dict[tuple, list] = {}
-            for r in result:
-                key = (r.symbol, r.side)
-                groups.setdefault(key, []).append(r)
-            deltas = {}
+            deltas: Dict[str, Dict[str, Dict[str, float]]] = {}
             for (sym, side), items in groups.items():
-                if len(items) < 2:
-                    continue
-                oldest = items[0]
+                # latest is always the most recent snapshot available
                 latest = items[-1]
-                # Use price percentage change over the window as the base signal,
-                # then orient it by position side. This avoids distortions from
-                # changing denominators in ROE/PNL% and better reflects movement
-                # in the underlying during the window.
+
+                # earliest: first at/after since; if none, closest before since within our buffer
+                earliest = None
+                for it in items:
+                    if it.captured_at >= since_py:
+                        earliest = it
+                        break
+                if earliest is None:
+                    # pick the last one before since if available
+                    before = [it for it in items if it.captured_at < since_py]
+                    if before:
+                        earliest = before[-1]
+                if earliest is None:
+                    # insufficient history for this window
+                    continue
+
                 try:
-                    if (oldest.current_price or 0) > 0:
-                        price_pct = ((latest.current_price - oldest.current_price) / oldest.current_price) * 100.0
+                    if (earliest.current_price or 0) > 0:
+                        price_pct = ((latest.current_price - earliest.current_price) / earliest.current_price) * 100.0
                     else:
                         price_pct = 0.0
                 except Exception:
@@ -227,8 +253,8 @@ async def get_changes(symbol: str | None = None) -> Dict[str, Any]:
                 oriented_pct = price_pct if side == 'Buy' else -price_pct
                 deltas.setdefault(sym, {})[side] = {
                     "pnl_pct_change": oriented_pct,
-                    "pnl_usd_change": (latest.unrealized_pnl - oldest.unrealized_pnl),
-                    "price_change": (latest.current_price - oldest.current_price),
+                    "pnl_usd_change": (latest.unrealized_pnl - earliest.unrealized_pnl),
+                    "price_change": (latest.current_price - earliest.current_price),
                 }
             out[label] = deltas
         return {"status": "success", "data": out}

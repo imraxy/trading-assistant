@@ -21,3 +21,17 @@ class PositionSnapshot(Base):
     captured_at: Mapped[datetime] = mapped_column(DateTime, index=True, default=datetime.utcnow)
 
 
+class DecisionCache(Base):
+    __tablename__ = "decision_cache"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    symbol: Mapped[str] = mapped_column(String(50), index=True)
+    side: Mapped[str] = mapped_column(String(10), index=True)
+    decision: Mapped[str] = mapped_column(String(20))
+    reason: Mapped[str] = mapped_column(String(2000))
+    # Store JSON as string; SQLite-friendly. For Postgres, switch to JSONB.
+    factors_json: Mapped[str] = mapped_column(String(8000), default="{}")
+    provenance_json: Mapped[str] = mapped_column(String(4000), default="{}")
+    context_json: Mapped[str] = mapped_column(String(8000), default="{}")
+    created_at: Mapped[datetime] = mapped_column(DateTime, index=True, default=datetime.utcnow)
+
