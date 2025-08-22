@@ -422,29 +422,49 @@ async def research_decide(
 
     try:
         user_str = _json.dumps(user_payload)
-        # If provider explicitly specified, do NOT fall back to others
+
+        # Helper to extract useful HTTP error info
+        def _http_err_info(ex: Exception) -> str:
+            try:
+                import httpx as _httpx  # local import to avoid module-level dep
+                if isinstance(ex, _httpx.HTTPStatusError) and getattr(ex, "response", None):
+                    sc = ex.response.status_code
+                    try:
+                        jb = ex.response.json()
+                        jb_str = _json.dumps(jb)[:400]
+                    except Exception:
+                        jb_str = (getattr(ex.response, "text", "") or "")[:400]
+                    return f"status={sc} body={jb_str}"
+            except Exception:
+                pass
+            return str(ex)[:400]
+
+        # Build a provider list to try. Even if a provider is specified, we now try fallbacks
+        # so the UI still receives an LLM-backed decision when quota is exhausted.
+        preferred_clients: list[LLMClient] = []
+        if llm:
+            preferred_clients.append(llm)
+        for c in get_llm_clients():
+            if c is llm:
+                continue
+            preferred_clients.append(c)
+
+        # Stagger calls slightly to avoid burst 429s
         last_err: Optional[str] = None
         content: str = ""
-        if provider:
+        for idx, client in enumerate(preferred_clients):
             try:
-                content = await llm.chat_complete(system, user_str, model=model)
+                if idx > 0:
+                    import asyncio as _asyncio
+                    await _asyncio.sleep(0.2 * idx)
+                content = await client.chat_complete(system, user_str, model=model)
+                # Annotate provenance with which provider produced the answer
+                provenance["llm_provider"] = client.__class__.__name__.replace("Client", "").lower()
+                break
             except Exception as e:
-                last_err = str(e)
+                last_err = _http_err_info(e)
                 content = ""
-        else:
-            # Auto mode: try preferred then fallbacks
-            # Stagger calls slightly to avoid burst 429s
-            for idx, client in enumerate([llm] + [c for c in get_llm_clients() if c is not llm]):
-                try:
-                    if idx > 0:
-                        import asyncio as _asyncio
-                        await _asyncio.sleep(0.2 * idx)
-                    content = await client.chat_complete(system, user_str, model=model)
-                    break
-                except Exception as e:
-                    last_err = str(e)
-                    content = ""
-                    continue
+                continue
         if not content:
             raise RuntimeError(last_err or "empty LLM response")
         try:

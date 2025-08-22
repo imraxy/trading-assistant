@@ -202,9 +202,49 @@ async def decide_with_llm(payload: DecisionRequest) -> Dict[str, Any]:
                     "context": enriched_ctx,
                     "return_schema": response_contract,
                 }
-                content = await llm.chat_complete(system, f"Decide for: {user}", model=payload.model)
-                # Best-effort JSON extraction
+                # Try preferred provider then fallbacks so we still get an LLM decision if quota is exhausted
+                def _http_err_info(ex: Exception) -> str:
+                    try:
+                        import httpx as _httpx
+                        if isinstance(ex, _httpx.HTTPStatusError) and getattr(ex, "response", None):
+                            sc = ex.response.status_code
+                            try:
+                                jb = ex.response.json()
+                                import json as _j
+                                jb_str = _j.dumps(jb)[:400]
+                            except Exception:
+                                jb_str = (getattr(ex.response, "text", "") or "")[:400]
+                            return f"status={sc} body={jb_str}"
+                    except Exception:
+                        pass
+                    return str(ex)[:400]
+
                 import json as _json
+                providers = [llm] if llm else []
+                from ...services.llm_provider import get_llm_clients
+                for c in get_llm_clients():
+                    if c is llm:
+                        continue
+                    providers.append(c)
+
+                content = ""
+                last_err = None
+                for idx, client in enumerate(providers):
+                    try:
+                        if idx > 0:
+                            import asyncio as _asyncio
+                            await _asyncio.sleep(0.2 * idx)
+                        content = await client.chat_complete(system, f"Decide for: {user}", model=payload.model)
+                        break
+                    except Exception as ex:
+                        last_err = _http_err_info(ex)
+                        content = ""
+                        continue
+
+                if not content:
+                    raise RuntimeError(last_err or "empty LLM response")
+
+                # Best-effort JSON extraction
                 try:
                     parsed = _json.loads(content)
                 except Exception:
@@ -231,15 +271,31 @@ async def decide_with_llm(payload: DecisionRequest) -> Dict[str, Any]:
         raise HTTPException(status_code=500, detail=str(e))
 @router.get("/chat/llm/test")
 async def test_llm(provider: str, model: str | None = None) -> Dict[str, Any]:
-    """Quick sanity test for a provider/model pair."""
+    """Quick sanity test for a provider/model pair.
+
+    Returns detailed error information for easier debugging of 429/5xx/invalid-model issues.
+    """
     llm = get_llm_client_for(provider)
     if not llm:
         return {"status": "error", "error": f"Provider '{provider}' not configured"}
     try:
         content = await llm.chat_complete("You echo.", "Return the word OK only.", model=model)
         ok = (content or "").strip().upper().startswith("OK")
-        return {"status": "success", "ok": ok, "response": content}
+        return {"status": "success", "ok": ok, "response": content, "provider": provider, "model": model}
     except Exception as e:
-        return {"status": "error", "error": str(e)}
+        # Try to extract HTTP status and body if available
+        status_code = None
+        body = None
+        try:
+            import httpx  # type: ignore
+            if isinstance(e, httpx.HTTPStatusError) and getattr(e, "response", None):
+                status_code = e.response.status_code
+                try:
+                    body = e.response.json()
+                except Exception:
+                    body = getattr(e.response, "text", "")
+        except Exception:
+            pass
+        return {"status": "error", "error": str(e), "provider": provider, "model": model, "status_code": status_code, "body": body}
 
 

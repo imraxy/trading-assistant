@@ -889,7 +889,7 @@
                 positions: [],
                 closed: [],
                 ui: { groupBySymbol: true, showClosed: false, chatOpen: false, debugOpen: false, darkMode: false, decisionOpen: false, promptOpen: false, autoResearch: false, decisionsRunning: false, provider: '', model: '' },
-                models: { openai: ["gpt-4o", "gpt-4o-mini", "o4-mini"], gemini: ["gemini-2.5-pro", "gemini-1.5-pro", "gemini-1.5-flash"], anthropic: ["claude-3-5-sonnet-latest", "claude-3-opus-latest", "claude-3-haiku-latest"], mistral: ["mistral-large-latest", "ministral-8b-latest"], groq: ["llama-3.1-70b-versatile", "llama-3.1-8b-instant"] },
+                models: { openai: ["gpt-4o", "gpt-4o-mini", "o4-mini"], gemini: ["gemini-2.5-pro", "gemini-1.5-pro", "gemini-1.5-flash"], anthropic: ["claude-3-5-sonnet-latest", "claude-3-opus-latest", "claude-3-haiku-latest"], mistral: ["mistral-large-latest", "ministral-8b-latest"], groq: ["llama-3.3-70b-versatile", "llama-3.1-70b-versatile", "llama-3.1-8b-instant", "mixtral-8x7b-32768"] },
                 chat: { input: '', loading: false, messages: [] },
                 debug: { lastSnapshot: null, lastLogs: [], latest: null },
                 decision: null,
@@ -919,9 +919,14 @@
                     try {
                         const c = await (await fetch('/api/v1/config')).json();
                         if (c?.data?.llm_models) this.models = c.data.llm_models;
+                        const defaults = c?.data?.llm_defaults || {};
                         // Try to reflect current provider from backend features
                         const pref = c?.data?.features?.ai_provider;
                         if (pref && !this.ui.provider) this.ui.provider = pref === 'auto' ? '' : pref;
+                        // Pick recommended default model if provider known
+                        if (this.ui.provider && defaults[this.ui.provider]) {
+                            this.ui.model = defaults[this.ui.provider];
+                        }
                     } catch(e) { /* ignore */ }
                     await this.refreshPortfolio();
                     await this.loadPositions();
@@ -933,6 +938,12 @@
                     });
                 },
                 onProviderChanged(){
+                    // Set default model (best/first) for the selected provider
+                    if (this.ui.provider && this.models[this.ui.provider] && this.models[this.ui.provider].length) {
+                        this.ui.model = this.models[this.ui.provider][0];
+                    } else {
+                        this.ui.model = '';
+                    }
                     if(this.ui.decisionsRunning){ this.computeDecisions(); }
                 },
                 

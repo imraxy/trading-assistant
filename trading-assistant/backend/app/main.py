@@ -17,15 +17,18 @@ from .api.routes import health, positions, browser_actions, market_data, portfol
 from .api.routes import research
 from .api.routes import chat
 from .core.config import get_settings
-from .services.llm_provider import available_providers, suggested_models
+from .services.llm_provider import available_providers, suggested_models, get_models_map
 from .core.logging import setup_logging
 from dotenv import load_dotenv
 
-# Load environment variables from backend/.env so os.getenv works across services
+# Load environment variables from backend/.env and backend/app/.env so os.getenv works across services
 try:
     _here = os.path.dirname(__file__)
-    _env_path = os.path.abspath(os.path.join(_here, "..", ".env"))
-    load_dotenv(_env_path)
+    _env_path_backend = os.path.abspath(os.path.join(_here, "..", ".env"))
+    load_dotenv(_env_path_backend)
+    # Also try app/.env if present (some setups keep env here)
+    _env_path_app = os.path.abspath(os.path.join(_here, ".env"))
+    load_dotenv(_env_path_app, override=False)
 except Exception:
     pass
 
@@ -132,6 +135,9 @@ if os.path.exists(frontend_path):
 @app.get("/api/v1/config")
 async def get_config():
     """Get application configuration status"""
+    # Live model discovery where possible; fall back to curated list
+    _models = await get_models_map(prefer_live=True)
+    _defaults = {prov: (mods[0] if mods else None) for prov, mods in _models.items()}
     return {
         "status": "success",
         "data": {
@@ -144,10 +150,10 @@ async def get_config():
                 "openai_integration": bool(os.getenv("OPENAI_API_KEY") or settings.OPENAI_API_KEY),
                 "gemini_integration": bool(os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")),
                 "ai_provider": (os.getenv("AI_PROVIDER") or "openai"),
-            }
-        ,
+            },
             "llm_providers": available_providers(),
-            "llm_models": suggested_models()
+            "llm_models": _models,  # latest from providers when available
+            "llm_defaults": _defaults,
         }
     }
 
