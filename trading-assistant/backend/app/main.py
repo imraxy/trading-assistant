@@ -17,7 +17,7 @@ from .api.routes import health, positions, browser_actions, market_data, portfol
 from .api.routes import research
 from .api.routes import chat
 from .core.config import get_settings
-from .services.llm_provider import available_providers
+from .services.llm_provider import available_providers, suggested_models
 from .core.logging import setup_logging
 from dotenv import load_dotenv
 
@@ -146,7 +146,8 @@ async def get_config():
                 "ai_provider": (os.getenv("AI_PROVIDER") or "openai"),
             }
         ,
-            "llm_providers": available_providers()
+            "llm_providers": available_providers(),
+            "llm_models": suggested_models()
         }
     }
 

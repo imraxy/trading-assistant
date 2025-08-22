@@ -13,3 +13,12 @@ Next steps:
 - Research improvements: symbol normalization strips quantity prefixes (e.g., `1000PEPEUSDT`→`PEPEUSDT`), and adds CoinGecko market_chart fallback for TA when Binance lacks pair.
 - Planned: add `SymbolResolver` (Bybit→Binance/Kraken/CoinGecko id) with DB cache; `research_snapshots` table; completeness flags per category; background prefetch; UI pills for TA/FA/News status; decision scoring/confidence.
 - Ensure stable backend startup: scripts added (`start_backend.sh`, `stop_backend.sh`, `status.sh`, logs tail). Venv bootstrap fixed when pip missing; SQLAlchemy added to requirements.
+
+LLM provider/model integration (current focus):
+- Multi-LLM is implemented across OpenAI, Gemini, Anthropic, Mistral, Groq via `app/services/llm_provider.py` with request concurrency, pacing, and retries.
+- Explicit provider selection disables cross-provider fallback. Auto mode retains prioritized fallback.
+- Frontend toolbar has Provider and Model dropdowns. When a provider is chosen, the Model list shows suggested models for that provider.
+- Backend validates `provider`/`model` pairing and returns a clear error if mismatched.
+- Groq client uses OpenAI-compatible endpoint and now surfaces full error JSON on 4xx for easier debugging.
+- Config endpoint exposes available providers and suggested models. Test endpoint added: `GET /api/v1/chat/llm/test?provider=...&model=...`.
+- Canonical env file: `backend/app/.env`. Set only the keys for the provider in use to avoid accidental fallbacks.

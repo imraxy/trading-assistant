@@ -14,7 +14,8 @@ import logging
 
 from ...services.bybit_service import bybit_service
 from ...services.portfolio_service import portfolio_service
-from ...services.llm_provider import get_llm_client, get_llm_client_for, available_providers
+from ...services.llm_provider import get_llm_client, get_llm_client_for, available_providers, is_valid_model_for_provider
+from ...services.llm_provider import suggested_models
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -30,6 +31,7 @@ class DecisionRequest(BaseModel):
     side: str
     context: Dict[str, Any]
     provider: Optional[str] = None
+    model: Optional[str] = None
 
 
 @router.post("/chat/ask")
@@ -56,6 +58,9 @@ async def ask_chatbot(payload: ChatRequest) -> Dict[str, Any]:
         analytics = analysis_result.get("analytics", {})
 
         # If OpenAI available, build a concise context and ask
+        # Validate provider/model pairing
+        if payload.provider and payload.model and not is_valid_model_for_provider(payload.provider, payload.model):
+            return {"status": "error", "error": f"Model '{payload.model}' is not valid for provider '{payload.provider}'"}
         llm = get_llm_client_for(payload.provider) or get_llm_client()
         if llm:
             try:
@@ -197,7 +202,7 @@ async def decide_with_llm(payload: DecisionRequest) -> Dict[str, Any]:
                     "context": enriched_ctx,
                     "return_schema": response_contract,
                 }
-                content = await llm.chat_complete(system, f"Decide for: {user}")
+                content = await llm.chat_complete(system, f"Decide for: {user}", model=payload.model)
                 # Best-effort JSON extraction
                 import json as _json
                 try:
@@ -224,5 +229,17 @@ async def decide_with_llm(payload: DecisionRequest) -> Dict[str, Any]:
     except Exception as e:
         logger.error(f"Decision error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+@router.get("/chat/llm/test")
+async def test_llm(provider: str, model: str | None = None) -> Dict[str, Any]:
+    """Quick sanity test for a provider/model pair."""
+    llm = get_llm_client_for(provider)
+    if not llm:
+        return {"status": "error", "error": f"Provider '{provider}' not configured"}
+    try:
+        content = await llm.chat_complete("You echo.", "Return the word OK only.", model=model)
+        ok = (content or "").strip().upper().startswith("OK")
+        return {"status": "success", "ok": ok, "response": content}
+    except Exception as e:
+        return {"status": "error", "error": str(e)}
 
 

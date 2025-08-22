@@ -15,7 +15,7 @@ import os
 import math
 
 from ...services.ta_utils import rsi as rsi_calc, ema as ema_calc, support_resistance
-from ...services.llm_provider import get_llm_client, get_llm_clients, get_llm_client_for, available_providers
+from ...services.llm_provider import get_llm_client, get_llm_clients, get_llm_client_for, available_providers, is_valid_model_for_provider
 from ...database.database import SessionLocal, engine
 from ...database import models as db_models
 
@@ -173,7 +173,8 @@ async def research_decide(
     side: str = Query(...),
     force_refresh: bool = Query(False, description="Bypass cache and fetch fresh decision"),
     debug: bool = Query(False, description="Include exact LLM prompt in response"),
-    provider: str | None = Query(None, description="Force a specific LLM provider (openai|gemini|anthropic|mistral|groq)")
+    provider: str | None = Query(None, description="Force a specific LLM provider (openai|gemini|anthropic|mistral|groq)"),
+    model: str | None = Query(None, description="Optional model override for the selected provider")
 ) -> Dict[str, Any]:
     """Auto-research pipeline with graceful fallbacks and provenance.
 
@@ -406,6 +407,9 @@ async def research_decide(
             },
         }
 
+    # Guard against mismatched provider/model coming from UI
+    if provider and model and not is_valid_model_for_provider(provider, model):
+        return {"status": "error", "error": f"Model '{model}' is not valid for provider '{provider}'"}
     llm = get_llm_client_for(provider) or get_llm_client()
     if not llm:
         # fallback heuristic if no LLM configured, but still expose prompt when debug=true
@@ -418,16 +422,29 @@ async def research_decide(
 
     try:
         user_str = _json.dumps(user_payload)
-        # Try preferred provider, then any configured fallbacks to mitigate 429s
+        # If provider explicitly specified, do NOT fall back to others
         last_err: Optional[str] = None
-        for client in ([llm] + [c for c in get_llm_clients() if c is not llm]):
+        content: str = ""
+        if provider:
             try:
-                content = await client.chat_complete(system, user_str)
-                break
+                content = await llm.chat_complete(system, user_str, model=model)
             except Exception as e:
                 last_err = str(e)
                 content = ""
-                continue
+        else:
+            # Auto mode: try preferred then fallbacks
+            # Stagger calls slightly to avoid burst 429s
+            for idx, client in enumerate([llm] + [c for c in get_llm_clients() if c is not llm]):
+                try:
+                    if idx > 0:
+                        import asyncio as _asyncio
+                        await _asyncio.sleep(0.2 * idx)
+                    content = await client.chat_complete(system, user_str, model=model)
+                    break
+                except Exception as e:
+                    last_err = str(e)
+                    content = ""
+                    continue
         if not content:
             raise RuntimeError(last_err or "empty LLM response")
         try:
@@ -440,7 +457,7 @@ async def research_decide(
         parsed["provenance"] = provenance
         resp = {"status": "success", "data": parsed}
         if debug:
-            resp["prompt"] = {"system": system, "user": user_payload}
+            resp["prompt"] = {"system": system, "user": user_payload, "response": content, "provider": (provider or os.getenv("AI_PROVIDER") or "auto"), "model": (model or None)}
         _DECISION_CACHE[cache_key] = {"_ts": now, "data": parsed}
         # Persist to DB
         try:
@@ -491,7 +508,13 @@ async def research_decide(
                 db.close()
             except Exception:
                 pass
-        return {"status": "success", "data": fallback}
+        resp = {"status": "success", "data": fallback}
+        if debug:
+            try:
+                resp["prompt"] = {"system": system, "user": user_payload}
+            except Exception:
+                pass
+        return resp
 
 
 @router.post("/research/decide/batch")
@@ -505,6 +528,7 @@ async def research_decide_batch(payload: Dict[str, Any]) -> Dict[str, Any]:
     force_refresh: bool = bool(payload.get("force_refresh", False))
     recent_only_minutes: Optional[int] = payload.get("recent_only_minutes")
     provider: Optional[str] = payload.get("provider")
+    model: Optional[str] = payload.get("model")
     now = time.time()
     out: List[Dict[str, Any]] = []
     for p in positions:
@@ -545,7 +569,11 @@ async def research_decide_batch(payload: Dict[str, Any]) -> Dict[str, Any]:
                 except Exception:
                     pass
         try:
-            res = await research_decide(symbol=sym, side=sd, provider=provider)  # will fill cache
+            # add tiny delay between sequential calls to avoid burst 429s
+            if len(out) > 0:
+                import asyncio as _asyncio
+                await _asyncio.sleep(0.1)
+            res = await research_decide(symbol=sym, side=sd, provider=provider, model=model)  # will fill cache
             data = res.get("data") or {}
             out.append({"symbol": sym, "side": sd, **data})
         except Exception as e:

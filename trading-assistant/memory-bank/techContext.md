@@ -3,4 +3,19 @@
 - Python 3.11+, FastAPI, httpx, SQLAlchemy (SQLite for snapshots), Playwright for snapshots.
  - Frontend uses Tailwind CDN, Alpine.js, AG Grid Community UMD; theme: Quartz/Quartz Dark with postSortRows.
  - Bybit v5 REST APIs for positions and closed PnL. Mainnet only.
- - Chat/Decision: `/api/v1/chat/ask` and `/api/v1/chat/decide` use OpenAI by default via `OPENAI_API_KEY` and `OPENAI_MODEL`, with heuristic fallback. Gemini can be introduced via config later.
+ - Chat/Decision endpoints:
+   - `/api/v1/chat/ask`, `/api/v1/chat/decide` (position-aware), `/api/v1/research/decide` (TA/FA/News + LLM) and `/api/v1/research/decide/batch`.
+   - `/api/v1/research/history` returns prior decisions from DB.
+   - `/api/v1/chat/llm/test?provider=...&model=...` quick sanity test for provider/model.
+ - Multi-LLM support (`openai`, `gemini`, `anthropic`, `mistral`, `groq`) via `app/services/llm_provider.py` with per-request optional `provider`/`model` override.
+   - Suggested models include: OpenAI (`gpt-4o`, `gpt-4o-mini`, `o4-mini`), Gemini (`gemini-2.5-pro`, `gemini-1.5-pro`, `gemini-1.5-flash`), Anthropic (`claude-3-5-sonnet-latest`, `claude-3-opus-latest`, `claude-3-haiku-latest`), Mistral (`mistral-large-latest`, `ministral-8b-latest`), Groq (`llama-3.3-70b-versatile`, `llama-3.1-70b-versatile`, `llama-3.1-8b-instant`, `mixtral-8x7b-32768`).
+   - Provider/model validation guards bad combos with a clear error.
+   - Explicit provider disables fallback; Auto uses prioritized fallbacks among configured providers.
+ - Environment variables (single file preferred at `backend/app/.env`):
+   - Common: `AI_PROVIDER` (auto|openai|gemini|anthropic|mistral|groq)
+   - OpenAI: `OPENAI_API_KEY`, `OPENAI_MODEL`
+   - Gemini: `GOOGLE_API_KEY` or `GEMINI_API_KEY`, `GEMINI_MODEL`
+   - Anthropic: `ANTHROPIC_API_KEY`, `ANTHROPIC_MODEL`
+   - Mistral: `MISTRAL_API_KEY`, `MISTRAL_MODEL`
+   - Groq: `GROQ_API_KEY`, `GROQ_MODEL`
+ - Error handling: detailed Groq error surfacing (includes status/model/body) for faster diagnosis (e.g., model_not_found).

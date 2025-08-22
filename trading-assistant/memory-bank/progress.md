@@ -11,3 +11,10 @@ Pending:
 - Validate value correctness vs Bybit UI for select symbols; adjust for inverse multiplier if needed.
 - Implement `SymbolResolver`, `research_snapshots`, completeness flags, background prefetch, UI source-status pills, decision scoring/confidence.
 - Chatbot to query local snapshots and research history; add per-row decision history in drawer using `/api/v1/research/history`.
+
+New (LLM multi-provider and debugging):
+- Implemented multi-LLM abstraction (OpenAI, Gemini, Anthropic, Mistral, Groq) with provider/model dropdown in UI and per-request overrides.
+- Explicit provider selection disables fallback; auto mode retains prioritized fallbacks.
+- Provider/model validation returns clear errors for invalid combinations.
+- Groq client enhanced to surface full error JSON on non-2xx; suggested models list updated.
+- Added `/api/v1/chat/llm/test` endpoint to quickly verify provider/model configuration.

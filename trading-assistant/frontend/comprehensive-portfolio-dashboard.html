@@ -148,6 +148,14 @@
                         <option value="mistral">Mistral</option>
                         <option value="groq">Groq</option>
                     </select>
+                    <select x-model="ui.model" class="px-2 py-2 rounded border dark:bg-gray-800 dark:border-gray-700 dark:text-gray-100" :disabled="!ui.provider">
+                        <option value="">Model (auto)</option>
+                        <template x-if="models[ui.provider]">
+                            <template x-for="m in models[ui.provider]" :key="m">
+                                <option :value="m" x-text="m"></option>
+                            </template>
+                        </template>
+                    </select>
                     <button @click="manualRefreshDecisions()" class="px-3 py-2 rounded bg-purple-600 hover:bg-purple-700 text-white dark:bg-purple-500 dark:hover:bg-purple-600" title="Load cached decisions (or recompute if auto is on)">LLM Refresh</button>
                     <button @click="toggleDecisions()" :class="ui.decisionsRunning ? 'px-3 py-2 rounded bg-emerald-600 hover:bg-emerald-700 text-white dark:bg-emerald-500 dark:hover:bg-emerald-600' : 'px-3 py-2 rounded bg-slate-100 hover:bg-slate-200 dark:bg-gray-700 dark:hover:bg-gray-600 dark:text-gray-100 dark:border dark:border-gray-600'" x-text="ui.decisionsRunning ? 'Decisions: On' : 'Decisions: Off'"></button>
                     <button @click="ui.autoResearch = !ui.autoResearch" :class="ui.autoResearch ? 'px-3 py-2 rounded bg-emerald-600 hover:bg-emerald-700 text-white dark:bg-emerald-500 dark:hover:bg-emerald-600' : 'px-3 py-2 rounded bg-slate-100 hover:bg-slate-200 dark:bg-gray-700 dark:hover:bg-gray-600 dark:text-gray-100 dark:border dark:border-gray-600'" x-text="ui.autoResearch ? 'Auto Research: On' : 'Auto Research: Off'"></button>
@@ -517,7 +525,18 @@
             </div>
             <div class="p-4 overflow-auto text-xs flex-1">
                 <template x-if="prompt && (Object.keys(prompt).length > 0)">
-                    <pre class="whitespace-pre-wrap break-words" x-text="JSON.stringify(prompt, null, 2)"></pre>
+                    <div class="space-y-4">
+                        <div>
+                            <div class="font-semibold mb-1">Request</div>
+                            <pre class="whitespace-pre-wrap break-words" x-text="JSON.stringify({system: prompt.system, user: prompt.user}, null, 2)"></pre>
+                        </div>
+                        <template x-if="prompt.response">
+                            <div>
+                                <div class="font-semibold mb-1">Raw Response</div>
+                                <pre class="whitespace-pre-wrap break-words" x-text="typeof prompt.response==='string' ? prompt.response : JSON.stringify(prompt.response, null, 2)"></pre>
+                            </div>
+                        </template>
+                    </div>
                 </template>
                 <template x-if="!prompt || Object.keys(prompt).length===0">
                     <div class="text-gray-400">Prompt not available yet. Click View Prompt after computing a decision for this row.</div>
@@ -869,7 +888,8 @@
                 lastUpdate: null,
                 positions: [],
                 closed: [],
-                ui: { groupBySymbol: true, showClosed: false, chatOpen: false, debugOpen: false, darkMode: false, decisionOpen: false, promptOpen: false, autoResearch: false, decisionsRunning: false, provider: '' },
+                ui: { groupBySymbol: true, showClosed: false, chatOpen: false, debugOpen: false, darkMode: false, decisionOpen: false, promptOpen: false, autoResearch: false, decisionsRunning: false, provider: '', model: '' },
+                models: { openai: ["gpt-4o", "gpt-4o-mini", "o4-mini"], gemini: ["gemini-2.5-pro", "gemini-1.5-pro", "gemini-1.5-flash"], anthropic: ["claude-3-5-sonnet-latest", "claude-3-opus-latest", "claude-3-haiku-latest"], mistral: ["mistral-large-latest", "ministral-8b-latest"], groq: ["llama-3.1-70b-versatile", "llama-3.1-8b-instant"] },
                 chat: { input: '', loading: false, messages: [] },
                 debug: { lastSnapshot: null, lastLogs: [], latest: null },
                 decision: null,
@@ -895,6 +915,14 @@
                 async init() {
                     console.log('🚀 Initializing Comprehensive Portfolio Dashboard');
                     await this.checkConnection();
+                    // Load backend config for provider availability and suggested models
+                    try {
+                        const c = await (await fetch('/api/v1/config')).json();
+                        if (c?.data?.llm_models) this.models = c.data.llm_models;
+                        // Try to reflect current provider from backend features
+                        const pref = c?.data?.features?.ai_provider;
+                        if (pref && !this.ui.provider) this.ui.provider = pref === 'auto' ? '' : pref;
+                    } catch(e) { /* ignore */ }
                     await this.refreshPortfolio();
                     await this.loadPositions();
                     await this.loadChanges();
@@ -1236,7 +1264,7 @@
                     api.forEachNode(n => rows.push(n));
                     // Batch path when auto research is on
                     if (this.ui.autoResearch) {
-                        const payload = { positions: rows.map(n => ({ symbol: n.data.symbol, side: n.data.side })), recent_only_minutes: 240, provider: this.ui.provider || undefined };
+                        const payload = { positions: rows.map(n => ({ symbol: n.data.symbol, side: n.data.side })), recent_only_minutes: 240, provider: this.ui.provider || undefined, model: this.ui.model || undefined };
                         try {
                             const resp = await fetch('/api/v1/research/decide/batch', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
                             const jb = await resp.json();
@@ -1260,7 +1288,7 @@
                         if (!this.ui.decisionsRunning) break;
                         try {
                             // Prefer research API per row
-                            const resR = await fetch(`/api/v1/research/decide?symbol=${encodeURIComponent(n.data.symbol)}&side=${encodeURIComponent(n.data.side)}${this.ui.provider?`&provider=${this.ui.provider}`:''}`);
+                            const resR = await fetch(`/api/v1/research/decide?symbol=${encodeURIComponent(n.data.symbol)}&side=${encodeURIComponent(n.data.side)}${this.ui.provider?`&provider=${this.ui.provider}`:''}${this.ui.model?`&model=${encodeURIComponent(this.ui.model)}`:''}`);
                             const jR = await resR.json();
                             if (jR.status === 'success' && jR.data) {
                                 n.setData({ ...n.data, __decision: jR.data.decision, __decisionReason: jR.data.reason, __factors: jR.data.factors, __context: jR.data.context, __provenance: jR.data.provenance, __receivedAt: new Date().toISOString() });
@@ -1278,7 +1306,7 @@
                                 support: undefined,
                                 resistance: undefined,
                             };
-                            const res = await fetch('/api/v1/chat/decide', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ symbol: n.data.symbol, side: n.data.side, context: ctx, provider: this.ui.provider || undefined }) });
+                            const res = await fetch('/api/v1/chat/decide', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ symbol: n.data.symbol, side: n.data.side, context: ctx, provider: this.ui.provider || undefined, model: this.ui.model || undefined }) });
                             const j = await res.json();
                             if (j.status === 'success' && j.data) {
                                 n.setData({ ...n.data, __decision: j.data.decision, __decisionReason: j.data.reason, __factors: j.data.factors, __receivedAt: new Date().toISOString() });
@@ -1335,7 +1363,7 @@
                     try {
                         const side = sideHuman === 'Long' ? 'Buy' : (sideHuman === 'Short' ? 'Sell' : sideHuman);
                         const url = `/api/v1/research/decide?symbol=${encodeURIComponent(symbol)}&side=${encodeURIComponent(side)}&force_refresh=true`;
-                        const res = await fetch(url + `${this.ui.provider?`&provider=${this.ui.provider}`:''}`);
+                        const res = await fetch(url + `${this.ui.provider?`&provider=${this.ui.provider}`:''}${this.ui.model?`&model=${encodeURIComponent(this.ui.model)}`:''}`);
                         const j = await res.json();
                         if (j.status === 'success' && j.data) {
                             // update grid row
@@ -1359,7 +1387,7 @@
                     try {
                         const side = sideHuman === 'Long' ? 'Buy' : (sideHuman === 'Short' ? 'Sell' : sideHuman);
                         // Force a refresh with debug so backend attaches prompt into response
-                        const res = await fetch(`/api/v1/research/decide?symbol=${encodeURIComponent(symbol)}&side=${encodeURIComponent(side)}&force_refresh=true&debug=true${this.ui.provider?`&provider=${this.ui.provider}`:''}`);
+                        const res = await fetch(`/api/v1/research/decide?symbol=${encodeURIComponent(symbol)}&side=${encodeURIComponent(side)}&force_refresh=true&debug=true${this.ui.provider?`&provider=${this.ui.provider}`:''}${this.ui.model?`&model=${encodeURIComponent(this.ui.model)}`:''}`);
                         const j = await res.json();
                         if (j.status === 'success') { this.prompt = j.prompt || {}; this.ui.promptOpen = true; }
                     } catch (e) { console.warn('View prompt failed', e); }
