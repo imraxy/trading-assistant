@@ -16,6 +16,7 @@ from ...services.bybit_service import bybit_service
 from ...services.portfolio_service import portfolio_service
 from ...services.llm_provider import get_llm_client, get_llm_client_for, available_providers, is_valid_model_for_provider
 from ...services.llm_provider import suggested_models
+from ...services import model_router
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -269,6 +270,22 @@ async def decide_with_llm(payload: DecisionRequest) -> Dict[str, Any]:
     except Exception as e:
         logger.error(f"Decision error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+class AutoChatRequest(BaseModel):
+    system: Optional[str] = None
+    user: str
+    constraints: Optional[Dict[str, Any]] = None
+
+
+@router.post("/chat/auto")
+async def chat_auto(payload: AutoChatRequest) -> Dict[str, Any]:
+    """Smart Auto Best chat using aggregator router with failover."""
+    try:
+        system = payload.system or "You are a helpful assistant."
+        result = await model_router.auto_chat_complete(system, payload.user, task=(payload.constraints or {}))
+        return result
+    except Exception as e:
+        return {"status": "error", "error": str(e)}
+
 @router.get("/chat/llm/test")
 async def test_llm(provider: str, model: str | None = None) -> Dict[str, Any]:
     """Quick sanity test for a provider/model pair.

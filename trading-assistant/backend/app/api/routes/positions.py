@@ -8,6 +8,7 @@ from typing import List, Dict, Any
 from ...services.bybit_service import bybit_service
 import logging
 from datetime import datetime
+import os
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -46,6 +47,39 @@ async def test_bybit_connection() -> Dict[str, Any]:
             "connected": False,
             "error": str(e)
         }
+
+@router.get("/bybit/debug")
+async def debug_bybit_env() -> Dict[str, Any]:
+    """
+    Debug current Bybit env binding and client configuration (sanitized).
+    Does not expose secrets. Used to diagnose 401 causes.
+    """
+    try:
+        key_env = os.getenv("BYBIT_API_KEY") or ""
+        base_env = os.getenv("BYBIT_BASE_URL") or ""
+        use_tn_env = os.getenv("BYBIT_USE_TESTNET")
+        tn_env = os.getenv("BYBIT_TESTNET")
+        recv_window_env = os.getenv("BYBIT_RECV_WINDOW")
+
+        info = {
+            "env": {
+                "BYBIT_API_KEY_prefix": (key_env[:4] + "...") if key_env else "unset",
+                "BYBIT_BASE_URL": base_env or "unset",
+                "BYBIT_USE_TESTNET": use_tn_env if use_tn_env is not None else "unset",
+                "BYBIT_TESTNET": tn_env if tn_env is not None else "unset",
+                "BYBIT_RECV_WINDOW": recv_window_env if recv_window_env is not None else "unset",
+            },
+            "client": {
+                "base_url": getattr(bybit_service, "base_url", "unknown"),
+                "testnet": getattr(bybit_service, "testnet", None),
+                "recv_window": getattr(bybit_service, "recv_window", None),
+                "api_key_prefix": (bybit_service.api_key[:4] + "...") if getattr(bybit_service, "api_key", None) else "unset",
+            }
+        }
+        return {"status": "success", "data": info}
+    except Exception as e:
+        logger.error(f"Error in debug_bybit_env: {e}")
+        return {"status": "error", "error": str(e)}
 
 
 @router.get("/account")

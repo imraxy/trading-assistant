@@ -40,6 +40,24 @@ class Settings(BaseSettings):
     GOOGLE_API_KEY: Optional[str] = None
     GEMINI_API_KEY: Optional[str] = None
     GEMINI_MODEL: str = "gemini-1.5-pro"
+
+    # Aggregators and Router
+    AGGREGATORS_ENABLED: bool = True
+    GROQ_API_KEY: Optional[str] = None
+    OPENROUTER_API_KEY: Optional[str] = None
+    CHUTES_API_KEY: Optional[str] = None
+    NIM_API_KEY: Optional[str] = None
+    NIM_TOKEN: Optional[str] = None
+    NIM_BASE_URL: Optional[str] = "https://integrate.api.nvidia.com"
+    AGGREGATOR_OPTOUT_OPENROUTER: bool = False
+    AGGREGATOR_OPTOUT_CHUTES: bool = False
+    AGGREGATOR_OPTOUT_NIM: bool = False
+
+    CATALOG_REFRESH_INTERVAL_HOURS: int = 24
+    CATALOG_CACHE_PATH: str = "./.cache/models_catalog.json"
+
+    ROUTER_BUDGET_CEILING_USD_PER_M: float = 5.0
+    ROUTER_LATENCY_TARGET_MS: int = 2000
     
     ALPHA_VANTAGE_API_KEY: Optional[str] = None
     NEWS_API_KEY: Optional[str] = None
@@ -72,7 +90,8 @@ class Settings(BaseSettings):
             return v.lower() in ("true", "1", "yes", "on")
         return bool(v)
     
-    model_config = {"env_file": ".env", "case_sensitive": True, "extra": "ignore"}
+    # Use explicit python-dotenv loading order in app.main; do not pin here
+    model_config = {"case_sensitive": True, "extra": "ignore"}
 
 
 @lru_cache()

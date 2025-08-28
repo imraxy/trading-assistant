@@ -105,6 +105,271 @@
                  </div>
              </div>
         </div>
+<!-- Potential Altcoin Pumps Widget (inline, self-contained) -->
+        <div id="apw-home-card" style="max-width:420px;margin:0 auto 24px auto;">
+          <section class="apw-widget" id="apw-root" role="region" aria-labelledby="apw-heading" tabindex="-1" style="max-height:600px;display:flex;flex-direction:column;">
+            <header class="apw-header">
+              <div class="apw-title">
+                <span aria-hidden="true">🚀</span>
+                <span id="apw-heading">Potential Altcoin Pumps</span>
+                <span class="apw-badge" id="apw-last-updated" aria-live="polite">(initializing...)</span>
+              </div>
+              <div class="apw-actions">
+                <button class="apw-btn" id="apw-refresh-btn" type="button" aria-label="Refresh data">Refresh</button>
+                <button class="apw-btn" id="apw-contrast-btn" type="button" aria-label="Toggle high contrast">Contrast</button>
+              </div>
+            </header>
+
+            <nav class="apw-tabs" role="tablist" aria-label="Timeframes">
+              <button class="apw-tab" role="tab" id="tab-h1" aria-controls="panel-h1" aria-selected="true" data-tf="h1">Hourly</button>
+              <button class="apw-tab" role="tab" id="tab-d1" aria-controls="panel-d1" aria-selected="false" data-tf="d1">Daily</button>
+              <button class="apw-tab" role="tab" id="tab-w1" aria-controls="panel-w1" aria-selected="false" data-tf="w1">Weekly</button>
+            </nav>
+
+            <div class="apw-toolbar">
+              <div>
+                <label for="apw-sort-select">Sort:</label>
+                <select id="apw-sort-select" class="apw-select" aria-label="Sort results">
+                  <option value="score" selected>Composite Score</option>
+                  <option value="risk">Risk (Low→High)</option>
+                  <option value="volume">24h Volume</option>
+                  <option value="price">Price</option>
+                  <option value="symbol">Symbol</option>
+                </select>
+              </div>
+              <div id="apw-state" class="apw-badge">Ready</div>
+            </div>
+
+            <!-- Scroll region for long lists; flex:1 inside card -->
+            <section id="panel-h1" class="apw-list" role="tabpanel" aria-labelledby="tab-h1" style="flex:1 1 auto;overflow:auto;"></section>
+            <section id="panel-d1" class="apw-list" role="tabpanel" aria-labelledby="tab-d1" hidden style="flex:1 1 auto;overflow:auto;"></section>
+            <section id="panel-w1" class="apw-list" role="tabpanel" aria-labelledby="tab-w1" hidden style="flex:1 1 auto;overflow:auto;"></section>
+
+            <footer class="apw-footer">
+              <div class="apw-disclaimer">Informational only. Not financial advice.</div>
+              <div class="apw-badge">
+                <span id="apw-cache-status" class=""></span>
+                <span id="apw-error" class="apw-error" hidden></span>
+              </div>
+            </footer>
+          </section>
+        </div>
+
+        <!-- Scoped styles for APW (apw- namespace) -->
+        <style>
+          .apw-widget{background:#111827;border:1px solid #1f2937;border-radius:10px;box-shadow:0 8px 18px rgba(0,0,0,.35);outline:none;color:#e5e7eb;font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Cantarell,Noto Sans,"Helvetica Neue",Arial}
+          .apw-header{display:flex;align-items:center;justify-content:space-between;padding:10px 12px;border-bottom:1px solid #1f2937;background:linear-gradient(180deg,rgba(37,99,235,.08),transparent)}
+          .apw-title{display:flex;gap:8px;font-weight:700}
+          .apw-badge{font-size:11px;color:#9ca3af}
+          .apw-actions{display:flex;gap:6px}
+          .apw-btn{border:1px solid #1f2937;background:#0b1220;color:#e5e7eb;padding:6px 10px;border-radius:8px;font-size:12px;cursor:pointer}
+          .apw-btn:hover{border-color:#2563eb}
+          .apw-tabs{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;padding:8px;border-bottom:1px solid #1f2937;background:#0c1322}
+          .apw-tab{padding:8px;border-radius:8px;border:1px solid #1f2937;text-align:center;font-size:13px;background:#0b1220;cursor:pointer;color:#9ca3af}
+          .apw-tab[aria-selected="true"]{background:rgba(37,99,235,.15);color:#fff;border-color:#2563eb}
+          .apw-toolbar{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:8px 12px;border-bottom:1px solid #1f2937;font-size:12px;color:#9ca3af}
+          .apw-select{background:#0b1220;color:#e5e7eb;border:1px solid #1f2937;border-radius:8px;padding:4px 8px;font-size:12px}
+          .apw-list{display:grid;gap:8px;padding:8px 8px 12px;min-height:120px}
+          .apw-row{display:grid;grid-template-columns:1fr auto;gap:6px;border:1px solid #1f2937;border-radius:10px;padding:10px;background:#0a0f1c}
+          .apw-row:hover{border-color:rgba(37,99,235,.35)}
+          .apw-main{display:grid;gap:6px}
+          .apw-topline{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+          .apw-coin{display:flex;align-items:baseline;gap:6px;font-weight:700}
+          .apw-symbol{color:#9ca3af;font-size:12px;font-weight:600}
+          .apw-source{color:#9ca3af;font-size:11px;padding:2px 6px;border:1px solid #1f2937;border-radius:999px}
+          .apw-score{margin-left:auto;font-weight:800;font-size:14px;color:#fff}
+          .apw-score[data-band="watch"]{color:#a3e635}
+          .apw-score[data-band="strong"]{color:#10b981}
+          .apw-score[data-band="extreme"]{color:#f97316}
+          .apw-midline{display:grid;grid-template-columns:1.2fr 1fr;gap:8px}
+          .apw-spark{border:1px dashed #1f2937;border-radius:8px;padding:6px;display:grid;gap:4px}
+          .apw-spark svg{width:100%;height:38px;display:block}
+          .apw-stats{display:grid;gap:6px;font-size:12px;color:#9ca3af}
+          .apw-stat{display:flex;align-items:center;justify-content:space-between;gap:8px}
+          .apw-tags{display:flex;gap:6px;flex-wrap:wrap}
+          .apw-tag{font-size:11px;color:#e5e7eb;background:#0d1424;border:1px solid #1f2937;border-radius:999px;padding:2px 8px}
+          .apw-risk[data-level="Low"]{color:#10b981}
+          .apw-risk[data-level="Medium"]{color:#f59e0b}
+          .apw-risk[data-level="High"]{color:#ef4444}
+          .apw-side{display:grid;gap:8px;justify-items:end}
+          .apw-cta{display:inline-flex;gap:6px;background:#22c55e;color:#001a0a;padding:8px 10px;border-radius:8px;border:1px solid #064e3b;font-size:12px;text-decoration:none;font-weight:700}
+          .apw-cta:hover{background:#16a34a;color:#001a0a}
+          .apw-footer{border-top:1px solid #1f2937;padding:10px 12px;font-size:11px;color:#9ca3af;display:flex;align-items:center;justify-content:space-between;gap:6px;flex-wrap:wrap}
+          .apw-empty{border:1px dashed #1f2937;border-radius:10px;padding:14px;text-align:center;color:#9ca3af;background:#0b1220}
+          @media (max-width: 480px){ #apw-home-card{max-width:100%;padding:0 12px} }
+        </style>
+
+        <!-- Inline dataset (fallback) -->
+        <script type="application/json" id="apw-initial">
+        {
+          "h1": [
+            {
+              "id":"solana","symbol":"SOL","name":"Solana","timeframe":"h1","score":86,"confidence":88,
+              "risk_label":"Medium","predicted_move_pct":6.8,"predicted_range":{"low":-6.8,"high":6.8},
+              "price":142.35,"volume_24h":2450000000,"market_cap":67000000000,
+              "signals_fired":["EMA 9/21 cross recent","Donchian20 breakout","Expansion spike"],
+              "sparkline":[139.1,139.8,140.4,141.2,141.9,142.1,142.0,142.35],
+              "last_updated":"2025-08-22T12:20:00Z","source":"coingecko",
+              "cta_url":"comprehensive-portfolio-dashboard.html?symbol=SOL"
+            },
+            {
+              "id":"pepe","symbol":"PEPE","name":"Pepe","timeframe":"h1","score":73,"confidence":82,
+              "risk_label":"High","predicted_move_pct":9.4,"predicted_range":{"low":-9.4,"high":9.4},
+              "price":0.0000123,"volume_24h":980000000,"market_cap":5200000000,
+              "signals_fired":["Volume surge > volMA24","Above Donchian mid"],
+              "sparkline":[0.0000115,0.0000118,0.0000119,0.0000120,0.0000121,0.0000123],
+              "last_updated":"2025-08-22T12:20:00Z","source":"coingecko",
+              "cta_url":"comprehensive-portfolio-dashboard.html?symbol=PEPE"
+            }
+          ],
+          "d1": [
+            {
+              "id":"chainlink","symbol":"LINK","name":"Chainlink","timeframe":"d1","score":78,"confidence":90,
+              "risk_label":"Low","predicted_move_pct":11.3,"predicted_range":{"low":-11.3,"high":11.3},
+              "price":19.45,"volume_24h":875000000,"market_cap":11300000000,
+              "signals_fired":["EMA 10/20 cross recent","Donchian20 breakout","Positive RSI regime"],
+              "sparkline":[18.1,18.4,18.6,18.8,19.0,19.2,19.3,19.45],
+              "last_updated":"2025-08-22T12:20:00Z","source":"coingecko",
+              "cta_url":"comprehensive-portfolio-dashboard.html?symbol=LINK"
+            },
+            {
+              "id":"fetch-ai","symbol":"FET","name":"Fetch.ai","timeframe":"d1","score":65,"confidence":76,
+              "risk_label":"Medium","predicted_move_pct":15.6,"predicted_range":{"low":-15.6,"high":15.6},
+              "price":2.21,"volume_24h":430000000,"market_cap":1900000000,
+              "signals_fired":["Squeeze setup"],
+              "sparkline":[2.02,2.05,2.07,2.09,2.12,2.16,2.20,2.21],
+              "last_updated":"2025-08-22T12:20:00Z","source":"coingecko",
+              "cta_url":"comprehensive-portfolio-dashboard.html?symbol=FET"
+            }
+          ],
+          "w1": [
+            {
+              "id":"arweave","symbol":"AR","name":"Arweave","timeframe":"w1","score":81,"confidence":84,
+              "risk_label":"Medium","predicted_move_pct":22.7,"predicted_range":{"low":-22.7,"high":22.7},
+              "price":32.5,"volume_24h":210000000,"market_cap":2200000000,
+              "signals_fired":["Donchian55 breakout","Alignment with BTC/ETH weekly"],
+              "sparkline":[26.1,27.4,28.9,29.5,30.2,31.3,32.5],
+              "last_updated":"2025-08-22T12:20:00Z","source":"coingecko",
+              "cta_url":"comprehensive-portfolio-dashboard.html?symbol=AR"
+            },
+            {
+              "id":"aptos","symbol":"APT","name":"Aptos","timeframe":"w1","score":58,"confidence":70,
+              "risk_label":"High","predicted_move_pct":27.1,"predicted_range":{"low":-27.1,"high":27.1},
+              "price":7.45,"volume_24h":190000000,"market_cap":1200000000,
+              "signals_fired":["High ATR% risk"],
+              "sparkline":[6.8,6.9,7.0,7.1,7.3,7.45],
+              "last_updated":"2025-08-22T12:20:00Z","source":"coingecko",
+              "cta_url":"comprehensive-portfolio-dashboard.html?symbol=APT"
+            }
+          ]
+        }
+        </script>
+
+        <!-- Scoped controller (no globals; lazy init on DOMContentLoaded) -->
+        <script>
+        (function(){
+          'use strict';
+          function ready(fn){ if(document.readyState!=='loading'){fn();} else {document.addEventListener('DOMContentLoaded',fn,{once:true});} }
+          ready(function(){
+            const root=document.getElementById('apw-root');
+            if(!root){return;}
+            const lastUpdatedEl=document.getElementById('apw-last-updated');
+            const cacheStatusEl=document.getElementById('apw-cache-status');
+            const errorEl=document.getElementById('apw-error');
+            const stateEl=document.getElementById('apw-state');
+            const panels={h1:document.getElementById('panel-h1'),d1:document.getElementById('panel-d1'),w1:document.getElementById('panel-w1')};
+            const tabs={h1:document.getElementById('tab-h1'),d1:document.getElementById('tab-d1'),w1:document.getElementById('tab-w1')};
+            const sortSelect=document.getElementById('apw-sort-select');
+            const btnRefresh=document.getElementById('apw-refresh-btn');
+            const btnContrast=document.getElementById('apw-contrast-btn');
+
+            let activeTf='h1';
+            let data=parseInline('apw-initial')||{h1:[],d1:[],w1:[]};
+
+            function parseInline(id){try{const el=document.getElementById(id);return el?JSON.parse(el.textContent):null;}catch(e){return null;}}
+            function band(s){if(s>85)return'extreme';if(s>=70)return'strong';return'watch';}
+            function riskRank(r){return r==='Low'?0:r==='Medium'?1:2;}
+            function sortItems(tf,items){
+              const key=sortSelect.value||'score', cp=[...items];
+              switch(key){
+                case'score':cp.sort((a,b)=>(b.score||0)-(a.score||0));break;
+                case'risk':cp.sort((a,b)=>riskRank(a.risk_label||'High')-riskRank(b.risk_label||'High')||(b.score||0)-(a.score||0));break;
+                case'volume':cp.sort((a,b)=>(b.volume_24h||0)-(a.volume_24h||0));break;
+                case'price':cp.sort((a,b)=>(b.price||0)-(a.price||0));break;
+                case'symbol':cp.sort((a,b)=>String(a.symbol||'').localeCompare(String(b.symbol||'')));break;
+              }
+              return cp.slice(0,10);
+            }
+            function fmtNum(n,d=2){if(n==null||Number.isNaN(n))return'—';const a=Math.abs(n);if(a>=1e9)return(n/1e9).toFixed(2)+'B';if(a>=1e6)return(n/1e6).toFixed(2)+'M';if(a>=1e3)return(n/1e3).toFixed(2)+'K';return n.toFixed(d);}
+            function spark(values,w=220,h=38,stroke='#22c55e'){if(!values||values.length<2)values=[0,1];const mn=Math.min(...values),mx=Math.max(...values);const norm=v=>mx===mn?0.5*h:h-((v-mn)/(mx-mn))*h;const step=(w-6)/(values.length-1);let d='';values.forEach((v,i)=>{const x=3+i*step,y=norm(v);d+=(i?' L':'M')+x+' '+y;});return `<svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" aria-hidden="true"><path d="${d}" fill="none" stroke="${stroke}" stroke-width="2" vector-effect="non-scaling-stroke"/></svg>`;}
+            function esc(s){return String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
+            function escA(s){return esc(s).replace(/"/g,'&quot;');}
+
+            function row(item){
+              const b=band(item.score||0), risk=item.risk_label||'Medium', sp=spark(item.sparkline||[]);
+              const sigs=Array.isArray(item.signals_fired)?item.signals_fired.slice(0,3):[];
+              return `
+              <div class="apw-row" role="article" aria-label="${esc(item.name||item.symbol||'Asset')}">
+                <div class="apw-main">
+                  <div class="apw-topline">
+                    <div class="apw-coin">
+                      <span>${esc(item.name||'Unknown')}</span>
+                      <span class="apw-symbol">${esc(item.symbol||'')}</span>
+                      <span class="apw-source">coingecko</span>
+                    </div>
+                    <div class="apw-score" data-band="${b}" title="Composite score">${(item.score||0).toFixed(0)}</div>
+                  </div>
+                  <div class="apw-midline">
+                    <div class="apw-spark">${sp}</div>
+                    <div class="apw-stats">
+                      <div class="apw-stat"><span>Price</span><strong>$${fmtNum(item.price,4)}</strong></div>
+                      <div class="apw-stat"><span>24h Volume</span><strong>$${fmtNum(item.volume_24h,0)}</strong></div>
+                      <div class="apw-stat"><span>Predicted Move</span><strong>${fmtNum(item.predicted_move_pct,1)}%</strong></div>
+                      <div class="apw-stat"><span>Risk</span><strong class="apw-risk" data-level="${risk}">${risk}</strong></div>
+                    </div>
+                  </div>
+                  <div class="apw-tags">${sigs.map(s=>`<span class="apw-tag">${esc(s)}</span>`).join('')}</div>
+                </div>
+                <div class="apw-side">
+                  <a class="apw-cta" href="${escA(item.cta_url||'#')}" target="_blank" rel="noopener">View full analytics →</a>
+                </div>
+              </div>`;
+            }
+
+            function render(tf){
+              const panel=panels[tf], items=Array.isArray(data[tf])?data[tf]:[];
+              panel.innerHTML='';
+              if(!items.length){ panel.innerHTML = '<div class="apw-empty">No candidates yet. Data will load shortly.</div>'; return; }
+              panel.innerHTML = sortItems(tf,items).map(row).join('');
+            }
+
+            function setActive(tf){
+              activeTf=tf;
+              Object.keys(panels).forEach(k=>{ panels[k].hidden=(k!==tf); tabs[k].setAttribute('aria-selected',k===tf?'true':'false'); });
+              render(tf);
+            }
+
+            tabs.h1.addEventListener('click',()=>setActive('h1'));
+            tabs.d1.addEventListener('click',()=>setActive('d1'));
+            tabs.w1.addEventListener('click',()=>setActive('w1'));
+            sortSelect.addEventListener('change',()=>render(activeTf));
+            btnRefresh.addEventListener('click',()=>{ stateEl.textContent='Refreshed'; render(activeTf); setTimeout(()=>stateEl.textContent='Ready',800); });
+            btnContrast.addEventListener('click',()=>{ const html=document.documentElement; html.setAttribute('data-contrast', html.getAttribute('data-contrast')==='high'?'normal':'high'); });
+
+            // Initial mount with inline dataset fallback
+            try {
+              lastUpdatedEl.textContent='(last updated: '+new Date().toLocaleString()+')';
+              cacheStatusEl.textContent='Inline dataset';
+              errorEl.hidden=true;
+              setActive('h1');
+              // Ensure visible height
+              if(panels.h1.getBoundingClientRect().height&lt;10){ panels.h1.style.minHeight='140px'; }
+            } catch(e){
+              errorEl.hidden=false; errorEl.textContent='Render error: '+e.message;
+            }
+          });
+        })();
+        </script>
 
         <!-- Symbols List -->
         <div class="bg-gray-800 rounded-lg border border-gray-700 mb-8">

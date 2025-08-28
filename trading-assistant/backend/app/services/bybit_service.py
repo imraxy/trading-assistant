@@ -22,19 +22,19 @@ class BybitService:
     
     def __init__(self):
         settings = get_settings()
-        # Prefer settings (loads .env) with env fallbacks for compatibility
-        self.api_key = settings.BYBIT_API_KEY or os.getenv('BYBIT_API_KEY')
-        self.api_secret = settings.BYBIT_API_SECRET or os.getenv('BYBIT_API_SECRET')
-        
-        # Support both BYBIT_TESTNET and BYBIT_USE_TESTNET flags
-        testnet_flag = os.getenv('BYBIT_USE_TESTNET') or os.getenv('BYBIT_TESTNET')
-        if isinstance(testnet_flag, str):
-            self.testnet = testnet_flag.lower() in ("true", "1", "yes", "on")
-        elif testnet_flag is not None:
-            self.testnet = bool(testnet_flag)
+        # Credentials precedence: process env > settings (which may read .env)
+        self.api_key = os.getenv('BYBIT_API_KEY') or settings.BYBIT_API_KEY
+        self.api_secret = os.getenv('BYBIT_API_SECRET') or settings.BYBIT_API_SECRET
+
+        # Determine environment: prefer Settings flag; allow explicit env overrides if present
+        testnet_override = os.getenv('BYBIT_USE_TESTNET') or os.getenv('BYBIT_TESTNET')
+        if isinstance(testnet_override, str):
+            self.testnet = testnet_override.lower() in ("true", "1", "yes", "on")
+        elif testnet_override is not None:
+            self.testnet = bool(testnet_override)
         else:
             self.testnet = bool(settings.BYBIT_TESTNET)
-        
+
         # Base URL resolution with overrides
         explicit_base = os.getenv('BYBIT_BASE_URL')
         testnet_url = os.getenv('BYBIT_TESTNET_URL') or "https://api-testnet.bybit.com"
@@ -43,15 +43,63 @@ class BybitService:
             self.base_url = explicit_base
         else:
             self.base_url = testnet_url if self.testnet else mainnet_url
+
+        # Diagnostics (masked): base_url, which flag was used, and redacted key prefix
+        try:
+            key_prefix = (self.api_key[:4] + "...") if self.api_key else "unset"
+            flag_source = "BYBIT_USE_TESTNET" if isinstance(os.getenv('BYBIT_USE_TESTNET'), str) else ("BYBIT_TESTNET" if isinstance(os.getenv('BYBIT_TESTNET'), str) else "settings.BYBIT_TESTNET")
+            logger.info(
+                "BybitService init: key=%s, testnet=%s (%s), base_url=%s",
+                key_prefix, self.testnet, flag_source, self.base_url
+            )
+        except Exception:
+            pass
         
-        self.recv_window = 5000
+        # Recv window (ms) configurable to tolerate clock drift (default 20000)
+        try:
+            self.recv_window = int(os.getenv("BYBIT_RECV_WINDOW") or 20000)
+        except Exception:
+            self.recv_window = 20000
+        # HTTP client
         self.client = httpx.AsyncClient(timeout=30.0)
         
+    def _ensure_credentials(self) -> None:
+        """Ensure credentials and host reflect current env/settings every call.
+
+        - Credentials precedence: process env > settings (which may load .env files)
+        - Host precedence: BYBIT_BASE_URL > testnet flags (BYBIT_USE_TESTNET/BYBIT_TESTNET) > settings.BYBIT_TESTNET
+        """
+        # Re-resolve credentials
+        s = get_settings()
+        self.api_key = os.getenv('BYBIT_API_KEY') or s.BYBIT_API_KEY
+        self.api_secret = os.getenv('BYBIT_API_SECRET') or s.BYBIT_API_SECRET
+
+        # Re-resolve testnet flag
+        testnet_override = os.getenv('BYBIT_USE_TESTNET')
+        if testnet_override is None:
+            testnet_override = os.getenv('BYBIT_TESTNET')
+        if isinstance(testnet_override, str):
+            self.testnet = testnet_override.lower() in ("true", "1", "yes", "on")
+        elif testnet_override is not None:
+            self.testnet = bool(testnet_override)
+        else:
+            self.testnet = bool(s.BYBIT_TESTNET)
+
+        # Re-resolve base URL
+        explicit_base = os.getenv('BYBIT_BASE_URL')
+        testnet_url = os.getenv('BYBIT_TESTNET_URL') or "https://api-testnet.bybit.com"
+        mainnet_url = os.getenv('BYBIT_MAINNET_URL') or "https://api.bybit.com"
+        if explicit_base:
+            self.base_url = explicit_base
+        else:
+            self.base_url = testnet_url if self.testnet else mainnet_url
+
     def _generate_signature(self, params: str, timestamp: str) -> str:
-        """Generate signature for Bybit API authentication"""
+        """Generate signature for Bybit API authentication (Sign-Type 2).
+        payload = timestamp + api_key + recv_window + params_string
+        """
         if not self.api_secret:
             raise ValueError("API secret not configured")
-            
         payload = f"{timestamp}{self.api_key}{self.recv_window}{params}"
         return hmac.new(
             self.api_secret.encode('utf-8'),
@@ -60,13 +108,12 @@ class BybitService:
         ).hexdigest()
     
     def _get_headers(self, params: str = "") -> Dict[str, str]:
-        """Get authenticated headers for API requests"""
+        """Get authenticated headers for API requests (Sign-Type 2)."""
+        self._ensure_credentials()
         if not self.api_key:
             raise ValueError("API key not configured")
-            
         timestamp = str(int(time.time() * 1000))
         signature = self._generate_signature(params, timestamp)
-        
         return {
             "X-BAPI-API-KEY": self.api_key,
             "X-BAPI-SIGN": signature,
@@ -77,41 +124,33 @@ class BybitService:
         }
     
     async def test_connection(self) -> Dict[str, Any]:
-        """Test API connection and credentials"""
+        """Test API connection and credentials against v5/user/query-api (auth-required)."""
         try:
-            # Sign GET with empty params
-            params_items = sorted({"accountType": "UNIFIED"}.items())
-            query_string = urlencode(params_items)
-            headers = self._get_headers(query_string)
-            response = await self.client.get(
-                f"{self.base_url}/v5/account/wallet-balance",
-                headers=headers,
-                params=params_items
-            )
-            
-            if response.status_code == 200:
-                data = response.json()
+            # Sign empty params string for GET
+            qs = ""
+            headers = self._get_headers(qs)
+            url = f"{self.base_url}/v5/user/query-api"
+            r = await self.client.get(url, headers=headers)
+            if r.status_code == 200:
+                data = r.json()
                 return {
                     "status": "success" if data.get("retCode") == 0 else "error",
                     "connected": data.get("retCode") == 0,
                     "testnet": self.testnet,
-                    "account_type": "UNIFIED",
-                    "message": "Connection successful" if data.get("retCode") == 0 else data.get("retMsg")
+                    "message": "OK" if data.get("retCode") == 0 else data.get("retMsg"),
+                    "meta": {"host": self.base_url, "sign_type": 2}
                 }
             else:
-                return {
-                    "status": "error",
-                    "connected": False,
-                    "error": f"HTTP {response.status_code}: {response.text}"
-                }
-                
+                body = ""
+                try:
+                    body = r.text[:300]
+                except Exception:
+                    body = "<no body>"
+                logger.warning("Bybit /v5/user/query-api auth failed: HTTP %s host=%s", r.status_code, self.base_url)
+                return {"status": "error", "connected": False, "error": f"HTTP {r.status_code}: {body}"}
         except Exception as e:
             logger.error(f"Bybit connection test failed: {e}")
-            return {
-                "status": "error",
-                "connected": False,
-                "error": str(e)
-            }
+            return {"status": "error", "connected": False, "error": str(e)}
     
     async def get_positions(self) -> Dict[str, Any]:
         """Get all active positions from Bybit"""
@@ -134,13 +173,12 @@ class BybitService:
                         params_dict["cursor"] = cursor
                     # Ensure signing order matches transmitted order
                     params_items = sorted(params_dict.items())
-                    query_string = urlencode(params_items)
-                    headers = self._get_headers(query_string)
-                    response = await self.client.get(
-                        f"{self.base_url}/v5/position/list",
-                        headers=headers,
-                        params=params_items,
-                    )
+                    qs = urlencode(params_items, doseq=True)
+                    headers = self._get_headers(qs)
+                    url = f"{self.base_url}/v5/position/list"
+                    if qs:
+                        url = f"{url}?{qs}"
+                    response = await self.client.get(url, headers=headers)
                     
                     if response.status_code != 200:
                         logger.error(f"HTTP error for {category} {base_params.get('settleCoin', '')}: {response.status_code} {response.text}")
@@ -228,13 +266,12 @@ class BybitService:
         try:
             params = {"accountType": "UNIFIED"}
             params_items = sorted(params.items())
-            query_string = urlencode(params_items)
-            headers = self._get_headers(query_string)
-            response = await self.client.get(
-                f"{self.base_url}/v5/account/wallet-balance",
-                headers=headers,
-                params=params_items,
-            )
+            qs = urlencode(params_items, doseq=True)
+            headers = self._get_headers(qs)
+            url = f"{self.base_url}/v5/account/wallet-balance"
+            if qs:
+                url = f"{url}?{qs}"
+            response = await self.client.get(url, headers=headers)
             
             if response.status_code == 200:
                 data = response.json()
@@ -328,13 +365,12 @@ class BybitService:
                         params["cursor"] = cursor
                     
                     params_items = sorted(params.items())
-                    query_string = urlencode(params_items)
-                    headers = self._get_headers(query_string)
-                    response = await self.client.get(
-                        f"{self.base_url}/v5/position/closed-pnl",
-                        headers=headers,
-                        params=params_items,
-                    )
+                    qs = urlencode(params_items, doseq=True)
+                    headers = self._get_headers(qs)
+                    url = f"{self.base_url}/v5/position/closed-pnl"
+                    if qs:
+                        url = f"{url}?{qs}"
+                    response = await self.client.get(url, headers=headers)
                     if response.status_code != 200:
                         logger.error(f"HTTP error closed-pnl {base_params['category']}: {response.status_code} {response.text}")
                         break

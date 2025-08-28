@@ -16,6 +16,8 @@ import math
 
 from ...services.ta_utils import rsi as rsi_calc, ema as ema_calc, support_resistance
 from ...services.llm_provider import get_llm_client, get_llm_clients, get_llm_client_for, available_providers, is_valid_model_for_provider
+from ...services import model_router as auto_router
+from ...services import model_catalog as mc
 from ...database.database import SessionLocal, engine
 from ...database import models as db_models
 
@@ -379,7 +381,8 @@ async def research_decide(
             "You are an expert trading assistant. Prioritize the provided Position + TA/FA/News context. "
             "Use position fields (entry/current, size, value, leverage, pnl, 1h/1d/1w deltas, hedge) together with TA/FA/News summaries. "
             "If any key fields are missing, reason conservatively using market structure and typical behavior; do not fabricate exact numbers. "
-            "Decide KEEP/CLOSE/REDUCE and explain briefly (<=300 chars). Return JSON: {decision, reason, factors}."
+            "Decide KEEP/CLOSE/REDUCE and ALWAYS provide a brief explanation (<=300 chars) in the 'reason' field explaining your decision. "
+            "Return ONLY valid JSON with this exact structure: {\"decision\": \"KEEP|CLOSE|REDUCE\", \"reason\": \"your explanation here\", \"factors\": {\"ta\": [], \"fa\": [], \"news\": [], \"risk\": []}}"
         )
         user_payload = {
             "symbol": symbol,
@@ -394,7 +397,8 @@ async def research_decide(
     else:
         system = (
             "You are an expert trading assistant. No external context could be fetched. Perform deep research using your knowledge and typical market behavior. "
-            "State uncertainties clearly; avoid fabricating precise values. Return JSON: {decision, reason, factors}."
+            "State uncertainties clearly; avoid fabricating precise values. Decide KEEP/CLOSE/REDUCE and ALWAYS provide a brief explanation (<=300 chars) in the 'reason' field. "
+            "Return ONLY valid JSON with this exact structure: {\"decision\": \"KEEP|CLOSE|REDUCE\", \"reason\": \"your explanation here\", \"factors\": {\"ta\": [], \"fa\": [], \"news\": [], \"risk\": []}}"
         )
         user_payload = {
             "symbol": symbol,
@@ -407,9 +411,108 @@ async def research_decide(
             },
         }
 
-    # Guard against mismatched provider/model coming from UI
-    if provider and model and not is_valid_model_for_provider(provider, model):
+    # Decide routing path: aggregator-backed vs direct SDK provider
+    prov_lower = (provider or "").lower()
+    is_aggregator = (prov_lower in {"openrouter", "nim", "groq", "chutes"}) or (model and "/" in model)
+
+    if is_aggregator:
+        # Resolve the correct aggregator from catalog by model id if possible
+        resolved_agg = prov_lower
+        model_in_cat = False
+        try:
+            cat = await mc.get_catalog(False)
+            for rec in (cat.get("models") or []):
+                if str(rec.get("id")) == str(model or ""):
+                    resolved_agg = str(rec.get("source_aggregator") or resolved_agg).lower()
+                    model_in_cat = True
+                    break
+        except Exception:
+            pass
+        # If UI passed a model that is not present under the chosen aggregator,
+        # do not fail the request; route to the top model for that aggregator.
+        if model and not model_in_cat:
+            provenance["router_hint"] = f"model_not_in_catalog:{model}; using_top_for={resolved_agg or 'auto'}"
+
+        # Build router task with hard constraints
+        try:
+            budget = float(os.getenv("ROUTER_BUDGET_CEILING_USD_PER_M", "5"))
+        except Exception:
+            budget = 5.0
+        try:
+            latency = int(os.getenv("ROUTER_LATENCY_TARGET_MS", "2000"))
+        except Exception:
+            latency = 2000
+
+        task = {
+            "budget_usd_per_m": budget,
+            "latency_target_ms": latency,
+            "requirements": {
+                "preferred_aggregator": resolved_agg if resolved_agg else None,
+                "preferred_model_id": model if (model and model_in_cat) else None,
+                "json_mode": True,
+            },
+        }
+
+        try:
+            user_str = _json.dumps(user_payload)
+            result = await auto_router.auto_chat_complete(system, user_str, task)
+            content = result.get("content") or ""
+            try:
+                parsed = _json.loads(content)
+                if not isinstance(parsed, dict):
+                    raise ValueError("non-dict json")
+                # Validate that reason is not empty
+                if not parsed.get("reason") or str(parsed.get("reason", "")).strip() == "":
+                    parsed["reason"] = f"LLM provided empty reason. Decision: {parsed.get('decision', 'KEEP')} based on position analysis."
+            except Exception:
+                parsed = {"decision": "KEEP", "reason": content[:300], "factors": {}}
+            parsed["context"] = {"ta": ta, "fa": fa, "news": news}
+            provenance["llm_provider"] = f"aggregator:{(result.get('model') or {}).get('source_aggregator','unknown')}"
+            parsed["provenance"] = provenance
+            resp = {"status": "success", "data": parsed}
+            if debug:
+                resp["prompt"] = {
+                    "system": system,
+                    "user": user_payload,
+                    "response": content,
+                    "provider": resolved_agg or "auto",
+                    "model": model,
+                    "routed_model": (result.get("model") or {}).get("id"),
+                }
+            _DECISION_CACHE[cache_key] = {"_ts": now, "data": parsed}
+            # Persist
+            try:
+                import json as _json
+                db = SessionLocal()
+                row = db_models.DecisionCache(
+                    symbol=symbol,
+                    side=side,
+                    decision=str(parsed.get("decision") or ""),
+                    reason=str(parsed.get("reason") or ""),
+                    factors_json=_json.dumps(parsed.get("factors") or {}),
+                    provenance_json=_json.dumps(parsed.get("provenance") or {}),
+                    context_json=_json.dumps(parsed.get("context") or {}),
+                )
+                db.add(row)
+                db.commit()
+            except Exception:
+                pass
+            finally:
+                try:
+                    db.close()
+                except Exception:
+                    pass
+            return resp
+        except Exception as e:
+            # If router failed (e.g., model not present under selected aggregator), fall back to direct flow
+            provenance["router_error"] = str(e)[:160]
+            # Do not block; continue to direct provider logic below
+
+    # Direct SDK providers: openai|gemini|anthropic|mistral|groq
+    direct_providers = {"openai", "gemini", "anthropic", "mistral", "groq"}
+    if provider and (prov_lower in direct_providers) and model and not is_valid_model_for_provider(provider, model):
         return {"status": "error", "error": f"Model '{model}' is not valid for provider '{provider}'"}
+
     llm = get_llm_client_for(provider) or get_llm_client()
     if not llm:
         # fallback heuristic if no LLM configured, but still expose prompt when debug=true
@@ -471,6 +574,9 @@ async def research_decide(
             parsed = _json.loads(content)
             if not isinstance(parsed, dict):
                 raise ValueError("non-dict json")
+            # Validate that reason is not empty
+            if not parsed.get("reason") or str(parsed.get("reason", "")).strip() == "":
+                parsed["reason"] = f"LLM provided empty reason. Decision: {parsed.get('decision', 'KEEP')} based on position analysis."
         except Exception:
             parsed = {"decision": "KEEP", "reason": content[:300], "factors": {}}
         parsed["context"] = {"ta": ta, "fa": fa, "news": news}
