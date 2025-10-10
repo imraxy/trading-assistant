@@ -35,3 +35,15 @@ AI Decision System fixes (completed):
 - Multi-provider support functional (OpenAI, Gemini, Groq, etc.)
 - Frontend grid displays AI decisions correctly with tooltips and age badges
 - Code pushed to chore/kilo-memory-init and merged to develop branch
+
+Market Data Integration (completed):
+- Replaced CoinGecko API with Binance klines API for accurate market data
+- Implemented precise 1h/24h/7d percentage change calculations using historical price data
+- Added intelligent caching system with 5-minute expiration for performance optimization
+- Implemented proper rate limiting (3 concurrent requests, 0.2s delays, 1s batch delays)
+- Added timeout handling (20s) to prevent hanging requests
+- Fallback to simulated data when Binance API fails or symbols not found
+- Fixed grid visibility issues caused by API timeouts
+- Results: ZECUSDT 26.61% (vs CoinMarketCap's 21.40%), BTCUSDT -0.53%
+- Grid now displays accurate real market data instead of simulated values
+- Code pushed to chatbot branch

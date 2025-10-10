@@ -15,3 +15,12 @@ LLM Abstraction & Patterns
   - In Auto mode, try preferred (via `AI_PROVIDER`) then fall back to other configured providers.
 - Suggested models exposed via `/api/v1/config` and enforced by a lightweight `is_valid_model_for_provider` guard.
 - Groq uses OpenAI-compatible API route and returns provider error JSON on non-2xx to aid diagnosis (e.g., model_not_found).
+
+Market Data Integration Patterns
+- Binance klines API integration in `app/api/routes/portfolio.py` for accurate market data
+- Intelligent caching system with 5-minute expiration stored in `./data/market_data_cache.json`
+- Rate limiting: 3 concurrent requests, 0.2s delays between requests, 1s delays between batches
+- Timeout handling: 20-second timeout with asyncio.wait_for to prevent hanging
+- Fallback strategy: Binance API → Cached data → Simulated data
+- Data format: Maintains `symbol -> {Buy: data, Sell: data}` structure for frontend compatibility
+- Error handling: Graceful degradation with logging and fallback to simulated data
