@@ -1340,7 +1340,14 @@ function ctaUrl(item){
                     } catch(e) { /* ignore */ }
                     await this.refreshPortfolio();
                     await this.loadPositions();
-                    await this.loadChanges();
+                    
+                    // Load changes with fallback - don't block grid rendering
+                    try {
+                        await this.loadChanges();
+                    } catch (e) {
+                        console.warn('Changes loading failed, proceeding with grid rendering');
+                        this.changes = { '1h': {}, '1d': {}, '1w': {} };
+                    }
                     
                     // Wait for AG Grid to be available
                     let attempts = 0;
@@ -1497,12 +1504,26 @@ function ctaUrl(item){
 
                 async loadChanges() {
                     try {
-                        const res = await fetch('/api/v1/portfolio/changes');
+                        console.log('🔄 Loading changes...');
+                        // Add timeout to prevent hanging on slow CoinGecko calls
+                        const controller = new AbortController();
+                        const timeoutId = setTimeout(() => controller.abort(), 15000); // 15 second timeout
+                        
+                        const res = await fetch('/api/v1/portfolio/changes', {
+                            signal: controller.signal
+                        });
+                        clearTimeout(timeoutId);
+                        
                         const data = await res.json();
                         if (data.status === 'success') {
                             this.changes = data.data || this.changes;
+                            console.log('✅ Changes loaded successfully');
                         }
-                    } catch (e) { console.warn('Load changes failed', e); }
+                    } catch (e) { 
+                        console.warn('❌ Load changes failed', e);
+                        // Initialize with empty changes if API fails
+                        this.changes = { '1h': {}, '1d': {}, '1w': {} };
+                    }
                 },
 
                 async captureSnapshot(save = false) {
