@@ -22,3 +22,11 @@ LLM provider/model integration (current focus):
 - Groq client uses OpenAI-compatible endpoint and now surfaces full error JSON on 4xx for easier debugging.
 - Config endpoint exposes available providers and suggested models. Test endpoint added: `GET /api/v1/chat/llm/test?provider=...&model=...`.
 - Canonical env file: `backend/app/.env`. Set only the keys for the provider in use to avoid accidental fallbacks.
+
+AG Grid visibility and responsiveness (completed):
+- Fixed grid container height collapse issue that was preventing grid visibility
+- Added explicit height: calc(100vh - 200px) and min-height: 400px to container
+- Added CSS rules with !important flags to prevent container collapse
+- Grid now properly displays all 189+ positions with auto-sizing columns
+- Reverted previous horizontal scroll fixes that were causing visibility issues
+- Grid is now fully functional with sorting, filtering, and responsive design

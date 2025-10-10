@@ -11,7 +11,21 @@
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
         <!-- AG Grid Community (UMD build) - use Theming API only (remove legacy CSS) -->
         <link rel="stylesheet" href="https://unpkg.com/ag-grid-community/styles/ag-theme-quartz.css" />
-        <script src="https://unpkg.com/ag-grid-community/dist/ag-grid-community.min.js" defer></script>
+        <script src="https://unpkg.com/ag-grid-community/dist/ag-grid-community.min.js"></script>
+        <script>
+            // Test AG Grid loading
+            window.addEventListener('load', function() {
+                console.log('🔍 Page loaded, checking AG Grid...');
+                console.log('🔍 window.agGrid:', typeof window.agGrid);
+                console.log('🔍 agGrid.createGrid:', typeof window.agGrid?.createGrid);
+                
+                if (window.agGrid) {
+                    console.log('✅ AG Grid loaded successfully');
+                } else {
+                    console.error('❌ AG Grid failed to load');
+                }
+            });
+        </script>
     <style>
         .portfolio-card {
             transition: all 0.3s ease;
@@ -69,6 +83,21 @@
         .ag-theme-quartz .ag-row.row-short .ag-cell { background: #fee2e2; }
         .ag-theme-quartz-dark .ag-row.row-long .ag-cell { background: rgba(16,185,129,0.15); }
         .ag-theme-quartz-dark .ag-row.row-short .ag-cell { background: rgba(239,68,68,0.15); }
+        
+        /* AG Grid responsive improvements */
+        .ag-theme-quartz, .ag-theme-quartz-dark {
+            width: 100% !important;
+            height: 100% !important;
+            min-height: 400px !important;
+        }
+        
+        /* Ensure grid container doesn't collapse */
+        [x-ref="agGridTop"] {
+            height: calc(100vh - 200px) !important;
+            min-height: 400px !important;
+            width: 100% !important;
+            display: block !important;
+        }
     </style>
 </head>
 <body class="bg-gray-50 dark:bg-gray-900 dark:text-gray-100 min-h-screen" x-data="comprehensivePortfolio()">
@@ -520,6 +549,9 @@ function ctaUrl(item){
                     <button @click="toggleSide('Buy')" class="px-3 py-2 rounded bg-emerald-600 hover:bg-emerald-700 text-white dark:bg-emerald-500 dark:hover:bg-emerald-600">Long</button>
                     <button @click="toggleSide('Sell')" class="px-3 py-2 rounded bg-rose-600 hover:bg-rose-700 text-white dark:bg-rose-500 dark:hover:bg-rose-600">Short</button>
                     <button @click="renderAgGrid()" class="px-3 py-2 rounded bg-blue-600 hover:bg-blue-700 text-white dark:bg-blue-500 dark:hover:bg-blue-600">Render/Refresh</button>
+                    <button @click="debugGrid()" class="px-3 py-2 rounded bg-purple-600 hover:bg-purple-700 text-white">Debug Grid</button>
+                    <button @click="testSimpleGrid()" class="px-3 py-2 rounded bg-orange-600 hover:bg-orange-700 text-white">Test Simple Grid</button>
+                    <button @click="forceGridRender()" class="px-3 py-2 rounded bg-red-600 hover:bg-red-700 text-white">Force Render</button>
                     <!-- Aggregator + Top Models selectors -->
                     <select x-model="ui.selectedAgg" @change="onAggChange" class="px-2 py-2 rounded border dark:bg-gray-800 dark:border-gray-700 dark:text-gray-100 min-w-[160px]" title="Aggregator">
                         <option value="">Auto Best</option>
@@ -539,7 +571,7 @@ function ctaUrl(item){
                     <button @click="toggleDark()" class="bg-neutral-800 text-white px-3 py-2 rounded dark:bg-neutral-200 dark:text-black" x-text="ui.darkMode ? 'Light' : 'Dark'"></button>
                 </div>
             </div>
-            <div :class="(ui.darkMode ? 'ag-theme-quartz-dark' : 'ag-theme-quartz') + ' rounded-xl shadow w-full ring-1 ring-gray-200 dark:ring-gray-700'" style="height: calc(100vh - 140px);" x-ref="agGridTop"></div>
+            <div :class="(ui.darkMode ? 'ag-theme-quartz-dark' : 'ag-theme-quartz') + ' rounded-xl shadow w-full ring-1 ring-gray-200 dark:ring-gray-700'" style="height: calc(100vh - 200px); min-height: 400px; width: 100%;" x-ref="agGridTop"></div>
         </section>
         
         <!-- Portfolio Summary Cards (hidden while grid UX is built) -->
@@ -1309,10 +1341,30 @@ function ctaUrl(item){
                     await this.refreshPortfolio();
                     await this.loadPositions();
                     await this.loadChanges();
-                    this.$nextTick(async () => {
-                        this.renderAgGrid();
-                        // Load cached decisions immediately (without turning on auto loop)
-                        await this.populateCachedDecisions();
+                    
+                    // Wait for AG Grid to be available
+                    let attempts = 0;
+                    const waitForAgGrid = () => {
+                        console.log(`🔍 Checking AG Grid availability... attempt ${attempts + 1}`);
+                        console.log('🔍 window.agGrid:', typeof window.agGrid);
+                        console.log('🔍 agGrid.createGrid:', typeof window.agGrid?.createGrid);
+                        
+                        if (window.agGrid && typeof window.agGrid.createGrid === 'function') {
+                            console.log('✅ AG Grid is ready, rendering...');
+                            this.renderAgGrid();
+                            this.populateCachedDecisions();
+                        } else if (attempts < 20) {
+                            attempts++;
+                            console.log(`⏳ Waiting for AG Grid... attempt ${attempts}`);
+                            setTimeout(waitForAgGrid, 500);
+                        } else {
+                            console.error('❌ AG Grid failed to load after 10 seconds');
+                            console.error('❌ Final check - window.agGrid:', window.agGrid);
+                        }
+                    };
+                    
+                    this.$nextTick(() => {
+                        waitForAgGrid();
                     });
                 },
                 onProviderChanged(){
@@ -1426,6 +1478,7 @@ function ctaUrl(item){
                 // Load positions
                 async loadPositions() {
                     try {
+                        console.log('🔄 Loading positions...');
                         const [openRes, closedRes] = await Promise.all([
                             fetch('/api/v1/positions'),
                             fetch('/api/v1/positions/closed')
@@ -1434,8 +1487,9 @@ function ctaUrl(item){
                         const closed = await closedRes.json();
                         this.positions = (open.status === 'success' ? open.positions : []) || [];
                         this.closed = (closed.status === 'success' ? closed.closed : []) || [];
+                        console.log('✅ Positions loaded:', this.positions.length, 'open,', this.closed.length, 'closed');
                     } catch (e) {
-                        console.warn('Positions load failed', e);
+                        console.warn('❌ Positions load failed', e);
                         this.positions = [];
                         this.closed = [];
                     }
@@ -1513,8 +1567,22 @@ function ctaUrl(item){
                 },
 
                 renderAgGrid() {
-                    if (!window.agGrid) { console.warn('AG Grid not ready'); return; }
-                    // Build row model with grouping key; map deltas by symbol+side
+                    try {
+                        if (!window.agGrid) { 
+                            console.warn('❌ AG Grid not ready'); 
+                            return; 
+                        }
+                        
+                        console.log('🔍 Debug: positions count:', this.positions.length);
+                        console.log('🔍 Debug: tableView count:', this.tableView.length);
+                        console.log('🔍 Debug: sample positions:', this.positions.slice(0, 2));
+                        
+                        if (this.positions.length === 0) {
+                            console.warn('⚠️ No positions loaded, cannot render grid');
+                            return;
+                        }
+                        
+                        // Build row model with grouping key; map deltas by symbol+side
                     const changesKeyed = (label) => {
                         const bucket = this.changes[label] || {};
                         const out = {};
@@ -1657,11 +1725,152 @@ function ctaUrl(item){
                     };
 
                     const gridDiv = this.$refs.agGridTop || this.$refs.agGrid;
+                    if (!gridDiv) {
+                        console.error('❌ Grid container not found');
+                        return;
+                    }
+                    
+                    console.log('🔧 Creating AG Grid with', rows.length, 'rows');
                     gridDiv.innerHTML = '';
-                    this.ag.api = agGrid.createGrid(gridDiv, gridOptions);
-                    // Do not auto-start decisions; user controls via toggle
-                    // No enforced sort model; grouping handled via postSortRows
-                    if (this.ag.quickFilter) this.ag.api.setGridOption('quickFilterText', this.ag.quickFilter);
+                    
+                    try {
+                        this.ag.api = agGrid.createGrid(gridDiv, gridOptions);
+                        console.log('✅ AG Grid created successfully');
+                        console.log('🔍 Grid container dimensions:', {
+                            width: gridDiv.offsetWidth,
+                            height: gridDiv.offsetHeight,
+                            clientWidth: gridDiv.clientWidth,
+                            clientHeight: gridDiv.clientHeight
+                        });
+                        console.log('🔍 Grid container classes:', gridDiv.className);
+                        console.log('🔍 Grid container styles:', {
+                            display: window.getComputedStyle(gridDiv).display,
+                            visibility: window.getComputedStyle(gridDiv).visibility,
+                            opacity: window.getComputedStyle(gridDiv).opacity
+                        });
+                        
+                        // Do not auto-start decisions; user controls via toggle
+                        // No enforced sort model; grouping handled via postSortRows
+                        if (this.ag.quickFilter) this.ag.api.setGridOption('quickFilterText', this.ag.quickFilter);
+                    } catch (error) {
+                        console.error('❌ AG Grid creation failed:', error);
+                    }
+                } catch (error) {
+                    console.error('❌ renderAgGrid failed:', error);
+                }
+                },
+
+                debugGrid() {
+                    console.log('🔍 === GRID DEBUG INFO ===');
+                    console.log('🔍 Positions count:', this.positions.length);
+                    console.log('🔍 TableView count:', this.tableView.length);
+                    console.log('🔍 Changes count:', Object.keys(this.changes['1h'] || {}).length);
+                    console.log('🔍 AG Grid available:', typeof window.agGrid);
+                    console.log('🔍 AG Grid createGrid:', typeof window.agGrid?.createGrid);
+                    console.log('🔍 Grid container:', this.$refs.agGridTop);
+                    console.log('🔍 Grid API:', this.ag.api);
+                    console.log('🔍 Sample positions:', this.positions.slice(0, 3));
+                    console.log('🔍 Sample tableView:', this.tableView.slice(0, 3));
+                    console.log('🔍 === END DEBUG INFO ===');
+                },
+
+                testSimpleGrid() {
+                    console.log('🧪 Testing simple AG Grid...');
+                    if (!window.agGrid) {
+                        console.error('❌ AG Grid not available');
+                        return;
+                    }
+                    
+                    const gridDiv = this.$refs.agGridTop;
+                    if (!gridDiv) {
+                        console.error('❌ Grid container not found');
+                        return;
+                    }
+                    
+                    // Clear existing content
+                    gridDiv.innerHTML = '';
+                    
+                    // Create simple test data
+                    const testData = [
+                        { symbol: 'BTCUSDT', side: 'Buy', value: 1000 },
+                        { symbol: 'ETHUSDT', side: 'Sell', value: 500 }
+                    ];
+                    
+                    const columnDefs = [
+                        { field: 'symbol', headerName: 'Symbol' },
+                        { field: 'side', headerName: 'Side' },
+                        { field: 'value', headerName: 'Value' }
+                    ];
+                    
+                    try {
+                        const gridOptions = {
+                            columnDefs: columnDefs,
+                            rowData: testData,
+                            theme: 'legacy' // Use legacy theme to avoid Theming API conflicts
+                        };
+                        
+                        this.ag.api = agGrid.createGrid(gridDiv, gridOptions);
+                        console.log('✅ Simple test grid created successfully');
+                    } catch (error) {
+                        console.error('❌ Simple test grid failed:', error);
+                    }
+                },
+
+                forceGridRender() {
+                    console.log('🔧 Force rendering grid...');
+                    const gridDiv = this.$refs.agGridTop;
+                    if (!gridDiv) {
+                        console.error('❌ Grid container not found');
+                        return;
+                    }
+                    
+                    // Clear everything
+                    gridDiv.innerHTML = '';
+                    
+                    // Force container to be visible
+                    gridDiv.style.display = 'block';
+                    gridDiv.style.visibility = 'visible';
+                    gridDiv.style.opacity = '1';
+                    gridDiv.style.width = '100%';
+                    gridDiv.style.height = 'calc(100vh - 140px)';
+                    
+                    console.log('🔍 Container after force styling:', {
+                        display: gridDiv.style.display,
+                        visibility: gridDiv.style.visibility,
+                        opacity: gridDiv.style.opacity,
+                        width: gridDiv.style.width,
+                        height: gridDiv.style.height
+                    });
+                    
+                    // Create minimal test grid
+                    if (window.agGrid) {
+                        const testData = [
+                            { symbol: 'BTCUSDT', side: 'Buy', value: 1000 },
+                            { symbol: 'ETHUSDT', side: 'Sell', value: 500 },
+                            { symbol: 'ADAUSDT', side: 'Buy', value: 200 }
+                        ];
+                        
+                        const columnDefs = [
+                            { field: 'symbol', headerName: 'Symbol', width: 120 },
+                            { field: 'side', headerName: 'Side', width: 80 },
+                            { field: 'value', headerName: 'Value', width: 100 }
+                        ];
+                        
+                        try {
+                            const gridOptions = {
+                                columnDefs: columnDefs,
+                                rowData: testData,
+                                theme: 'legacy'
+                            };
+                            
+                            this.ag.api = agGrid.createGrid(gridDiv, gridOptions);
+                            console.log('✅ Force render grid created');
+                        } catch (error) {
+                            console.error('❌ Force render failed:', error);
+                        }
+                    } else {
+                        console.error('❌ AG Grid not available');
+                    }
                 },
 
                 toggleDecisions() {

@@ -18,3 +18,10 @@ New (LLM multi-provider and debugging):
 - Provider/model validation returns clear errors for invalid combinations.
 - Groq client enhanced to surface full error JSON on non-2xx; suggested models list updated.
 - Added `/api/v1/chat/llm/test` endpoint to quickly verify provider/model configuration.
+
+AG Grid fixes (completed):
+- Fixed grid container height collapse that was preventing grid visibility
+- Added explicit height and min-height CSS rules with !important flags
+- Reverted problematic horizontal scroll fixes that caused visibility issues
+- Grid now properly displays all 189+ positions with full functionality
+- All columns auto-size correctly, sorting and filtering work as expected

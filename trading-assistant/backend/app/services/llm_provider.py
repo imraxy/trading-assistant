@@ -121,15 +121,27 @@ class OpenAIClient(LLMClient):
             "Content-Type": "application/json",
         }
         chosen_model = (model or self.model)
+        
+        # Determine temperature based on model
+        if chosen_model.startswith("gpt-5-nano"):
+            temperature = 1.0  # gpt-5-nano only supports temperature=1 (default)
+        else:
+            temperature = self.temperature
+            
         payload = {
             "model": chosen_model,
             "messages": [
                 {"role": "system", "content": system},
                 {"role": "user", "content": user},
             ],
-            "temperature": self.temperature,
-            "max_tokens": 600,
+            "temperature": temperature,
         }
+        
+        # Use max_completion_tokens for newer models like gpt-5-nano
+        if chosen_model.startswith("gpt-5") or chosen_model.startswith("o4"):
+            payload["max_completion_tokens"] = 600
+        else:
+            payload["max_tokens"] = 600
         # 1st attempt with configured model
         r = await _request_with_retries(
             "POST",
@@ -152,6 +164,20 @@ class OpenAIClient(LLMClient):
             requires_responses_api = ("responses api" in err_msg) or ("does not support" in err_msg and "chat" in err_msg)
             if (err_code == "model_not_found" or requires_responses_api) and chosen_model != fallback_model:
                 payload["model"] = fallback_model
+                
+                # Update temperature for fallback model
+                if fallback_model.startswith("gpt-5-nano"):
+                    payload["temperature"] = 1.0
+                else:
+                    payload["temperature"] = self.temperature
+                
+                # Update token parameter for fallback model
+                if fallback_model.startswith("gpt-5") or fallback_model.startswith("o4"):
+                    payload["max_completion_tokens"] = 600
+                    payload.pop("max_tokens", None)
+                else:
+                    payload["max_tokens"] = 600
+                    payload.pop("max_completion_tokens", None)
                 r2 = await _request_with_retries(
                     "POST",
                     "https://api.openai.com/v1/chat/completions",
