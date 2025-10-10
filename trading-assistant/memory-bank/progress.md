@@ -25,3 +25,13 @@ AG Grid fixes (completed):
 - Reverted problematic horizontal scroll fixes that caused visibility issues
 - Grid now properly displays all 189+ positions with full functionality
 - All columns auto-size correctly, sorting and filtering work as expected
+
+AI Decision System fixes (completed):
+- Fixed OpenAI gpt-5-nano parameter compatibility (max_completion_tokens vs max_tokens)
+- Resolved temperature parameter constraint (gpt-5-nano only supports temperature=1.0)
+- Updated default OpenAI model from gpt-5-nano to gpt-4o-mini for reliability
+- AI decision system now working with proper technical/fundamental analysis
+- Decisions include detailed reasoning and factor breakdowns (TA, FA, news, risk)
+- Multi-provider support functional (OpenAI, Gemini, Groq, etc.)
+- Frontend grid displays AI decisions correctly with tooltips and age badges
+- Code pushed to chore/kilo-memory-init and merged to develop branch

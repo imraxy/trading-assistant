@@ -30,3 +30,12 @@ AG Grid visibility and responsiveness (completed):
 - Grid now properly displays all 189+ positions with auto-sizing columns
 - Reverted previous horizontal scroll fixes that were causing visibility issues
 - Grid is now fully functional with sorting, filtering, and responsive design
+
+AI Decision System fixes (completed):
+- Fixed OpenAI gpt-5-nano parameter compatibility issues (max_completion_tokens vs max_tokens)
+- Resolved temperature parameter constraint (gpt-5-nano only supports temperature=1.0)
+- Updated default OpenAI model from gpt-5-nano to gpt-4o-mini for reliability
+- AI decision system now working with proper technical/fundamental analysis
+- Decisions include detailed reasoning and factor breakdowns (TA, FA, news, risk)
+- Multi-provider support functional (OpenAI, Gemini, Groq, etc.)
+- Frontend grid displays AI decisions correctly with tooltips and age badges
